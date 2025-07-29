@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>カメラOCRアプリ (複数端末連携・改善版)</title>
+    <title>カメラOCRアプリ (複数端末連携 完成版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .loader { border-top-color: #3498db; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        /* 【修正点】ビューファインダーのサイズを変更 */
         #viewfinder {
             position: absolute;
             left: 50%;
             top: 50%;
-            width: 60%; /* 横に狭く */
-            height: 40%; /* 縦に大きく */
+            width: 40%;
+            height: 30%;
             transform: translate(-50%, -50%);
             border: 3px solid #3498db;
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
@@ -101,11 +100,12 @@
             </div>
             <div id="receiver-display-section" class="hidden">
                 <p class="text-center text-gray-600">セッションID: <span id="display-session-id" class="font-bold"></span></p>
-                <div class="my-8 text-center">
-                    <p id="receiver-result-text" class="text-8xl font-mono font-bold text-gray-800">--- km/h</p>
-                    <p id="receiver-status" class="text-gray-500 mt-2">カメラからのデータ待機中...</p>
+                <div class="my-8 text-center flex items-baseline justify-center">
+                    <p id="receiver-result-number" class="text-8xl font-mono font-bold text-gray-800">---</p>
+                    <p class="text-4xl font-semibold text-gray-600 ml-2">km/h</p>
                 </div>
-                <button id="disconnect-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">接続を解除</button>
+                <p id="receiver-status" class="text-gray-500 mt-2 text-center">カメラからのデータ待機中...</p>
+                <button id="disconnect-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg mt-4">接続を解除</button>
             </div>
         </div>
     </div>
@@ -149,7 +149,7 @@
         const connectBtn = document.getElementById('connect-btn');
         const receiverDisplaySection = document.getElementById('receiver-display-section');
         const displaySessionId = document.getElementById('display-session-id');
-        const receiverResultText = document.getElementById('receiver-result-text');
+        const receiverResultNumber = document.getElementById('receiver-result-number');
         const receiverStatus = document.getElementById('receiver-status');
         const disconnectBtn = document.getElementById('disconnect-btn');
         
@@ -168,23 +168,29 @@
         // --- Firebaseの初期化と認証 ---
         async function initializeFirebase() {
             try {
+                // 【修正点】ユーザーが設定した固定の接続情報ではなく、環境から提供される動的な情報を再度使用するように修正
                 const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
                 const firebaseConfig = JSON.parse(firebaseConfigStr);
-
-                if (!firebaseConfig.apiKey) {
-                    throw new Error("Firebaseの接続情報がありません。");
-                }
-
+                
+                if (!firebaseConfig.apiKey) throw new Error("Firebaseの接続情報がありません。");
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (authToken) {
-                    await signInWithCustomToken(auth, authToken);
-                } else {
+                // 【修正点】認証プロセスをより堅牢にする
+                try {
+                    const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                    if (authToken) {
+                        await signInWithCustomToken(auth, authToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (authError) {
+                    console.warn("Custom token sign-in failed, falling back to anonymous sign-in.", authError);
                     await signInAnonymously(auth);
                 }
+
                 console.log("Firebase initialized and signed in.");
                 return true;
             } catch (e) {
@@ -202,7 +208,6 @@
             senderContent.classList.remove('hidden');
             initializeOCR();
         });
-
         receiverModeBtn.addEventListener('click', () => {
             modeSelection.classList.add('hidden');
             receiverContent.classList.remove('hidden');
@@ -214,7 +219,6 @@
             retryButton.classList.add('hidden');
             statusText.textContent = 'OCRエンジンの準備をしています...';
             statusDetail.textContent = '（初回は1分ほどかかる場合があります）';
-
             try {
                 worker = await Tesseract.createWorker('eng', 1, {
                     logger: m => {
@@ -223,7 +227,6 @@
                     }
                 });
                 await worker.setParameters({ tessedit_char_whitelist: '0123456789' });
-                
                 statusContainer.classList.add('hidden');
                 senderMain.classList.remove('hidden');
                 currentSessionId = Math.floor(10000 + Math.random() * 90000).toString();
@@ -254,6 +257,8 @@
                     await video.play();
                     startButtonText.textContent = 'カメラを停止';
                     realtimeToggle.disabled = false;
+                    realtimeToggle.checked = true;
+                    handleRealtimeToggle();
                 } catch (err) {
                     alert('カメラの起動に失敗しました。ブラウザの設定でカメラへのアクセスを許可してください。');
                 }
@@ -274,10 +279,46 @@
             }
         }
 
+        function adaptiveThreshold(imageData) {
+            const data = imageData.data;
+            const width = imageData.width;
+            const height = imageData.height;
+            const grayData = new Uint8Array(width * height);
+            const integralImage = new Uint32Array(width * height);
+            for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+                grayData[j] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+            }
+            for (let y = 0; y < height; y++) {
+                let sum = 0;
+                for (let x = 0; x < width; x++) {
+                    const index = y * width + x;
+                    sum += grayData[index];
+                    if (y === 0) integralImage[index] = sum;
+                    else integralImage[index] = integralImage[(y - 1) * width + x] + sum;
+                }
+            }
+            const S = Math.floor(width / 8);
+            const T = 15.0;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const index = y * width + x;
+                    const x1 = Math.max(0, x - Math.floor(S / 2));
+                    const x2 = Math.min(width - 1, x + Math.floor(S / 2));
+                    const y1 = Math.max(0, y - Math.floor(S / 2));
+                    const y2 = Math.min(height - 1, y + Math.floor(S / 2));
+                    const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+                    const sum = integralImage[y2 * width + x2] - (x1 > 0 ? integralImage[y2 * width + (x1 - 1)] : 0) - (y1 > 0 ? integralImage[(y1 - 1) * width + x2] : 0) + (x1 > 0 && y1 > 0 ? integralImage[(y1 - 1) * width + (x1 - 1)] : 0);
+                    const threshold = (sum / count) * (1 - T / 100);
+                    const color = grayData[index] > threshold ? 255 : 0;
+                    const dataIndex = index * 4;
+                    data[dataIndex] = data[dataIndex + 1] = data[dataIndex + 2] = color;
+                }
+            }
+        }
+
         async function recognizeText() {
             if (isRecognizing || !stream) return;
             isRecognizing = true;
-            
             try {
                 const videoRect = video.getBoundingClientRect();
                 const viewfinderRect = viewfinder.getBoundingClientRect();
@@ -293,13 +334,9 @@
                 cropCanvas.height = cropHeight;
                 const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
                 cropCtx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+                
                 const imageData = cropCtx.getImageData(0, 0, cropCanvas.width, cropCanvas.height);
-                const data = imageData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const avg = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                    const color = avg > 128 ? 255 : 0;
-                    data[i] = data[i + 1] = data[i + 2] = color;
-                }
+                adaptiveThreshold(imageData);
                 cropCtx.putImageData(imageData, 0, 0);
 
                 const { data: { text } } = await worker.recognize(cropCanvas);
@@ -307,10 +344,7 @@
                 if (digitsOnly.length === 3) {
                     senderResultText.textContent = `${digitsOnly} km/h`;
                     const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
-                    await setDoc(sessionDocRef, { 
-                        result: digitsOnly,
-                        updatedAt: serverTimestamp()
-                    });
+                    await setDoc(sessionDocRef, { result: digitsOnly, updatedAt: serverTimestamp() });
                 }
             } catch (error) {
                 console.error('Recognition error:', error);
@@ -338,30 +372,27 @@
             receiverInputSection.classList.add('hidden');
             receiverDisplaySection.classList.remove('hidden');
             displaySessionId.textContent = currentSessionId;
-
             const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
-                    receiverResultText.textContent = `${data.result} km/h`;
+                    receiverResultNumber.textContent = data.result;
                     receiverStatus.textContent = `最終更新: ${new Date().toLocaleTimeString()}`;
                 } else {
-                    receiverResultText.textContent = `--- km/h`;
+                    receiverResultNumber.textContent = `---`;
                     receiverStatus.textContent = 'セッションが見つかりません。IDを確認してください。';
                 }
             });
         }
 
         disconnectBtn.addEventListener('click', () => {
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = null;
-            }
+            if (unsubscribe) unsubscribe();
+            unsubscribe = null;
             currentSessionId = null;
             receiverDisplaySection.classList.add('hidden');
             receiverInputSection.classList.remove('hidden');
             sessionIdInput.value = '';
-            receiverResultText.textContent = '--- km/h';
+            receiverResultNumber.textContent = '---';
         });
 
         // --- アプリケーションの開始 ---
