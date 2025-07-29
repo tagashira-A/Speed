@@ -168,29 +168,32 @@
         // --- Firebaseの初期化と認証 ---
         async function initializeFirebase() {
             try {
-                // 【修正点】ユーザーが設定した固定の接続情報ではなく、環境から提供される動的な情報を再度使用するように修正
-                const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                const firebaseConfig = JSON.parse(firebaseConfigStr);
+                // 【重要】この部分をご自身のFirebase接続情報に置き換えてください
+                const firebaseConfig = {
+                  // apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
+                  // authDomain: "my-ocr-app-5668e.firebaseapp.com",
+                  // projectId: "my-ocr-app-5668e",
+                  // storageBucket: "my-ocr-app-5668e.firebasestorage.app",
+                  // messagingSenderId: "953157989165",
+                  // appId: "1:953157989165:web:30af95785f2264d89099a4"
+                };
+
+                // Canvas環境で自動提供される情報があればそちらを優先する
+                const envConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                const envConfig = JSON.parse(envConfigStr);
+
+                const finalConfig = envConfig.apiKey ? envConfig : firebaseConfig;
+
+                if (!finalConfig.apiKey) throw new Error("Firebaseの接続情報がありません。");
                 
-                if (!firebaseConfig.apiKey) throw new Error("Firebaseの接続情報がありません。");
-                
-                const app = initializeApp(firebaseConfig);
+                const app = initializeApp(finalConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 【修正点】認証プロセスをより堅牢にする
-                try {
-                    const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                    if (authToken) {
-                        await signInWithCustomToken(auth, authToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (authError) {
-                    console.warn("Custom token sign-in failed, falling back to anonymous sign-in.", authError);
-                    await signInAnonymously(auth);
-                }
-
+                const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (authToken) await signInWithCustomToken(auth, authToken);
+                else await signInAnonymously(auth);
+                
                 console.log("Firebase initialized and signed in.");
                 return true;
             } catch (e) {
