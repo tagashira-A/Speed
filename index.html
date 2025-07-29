@@ -115,7 +115,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM要素の取得 ---
@@ -167,44 +167,61 @@
 
         // --- Firebaseの初期化と認証 ---
         async function initializeFirebase() {
-            try {
-                // ▼▼▼▼▼ 【最重要】この部分をご自身のFirebase接続情報に置き換えてください ▼▼▼▼▼
-                // Firebaseプロジェクトからコピーした const firebaseConfig = { ... }; を
-                // この下の行に貼り付けてください。コメントアウトは必ず解除してください。
-                const firebaseConfig = {
-                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY", // 例: "AIzaSyB..."
-                  authDomain: "my-ocr-app-5668e.firebaseapp.com", // 例: "my-project.firebaseapp.com"
+            let firebaseConfig;
+            let isCanvasEnv = false;
+
+            if (typeof __firebase_config !== 'undefined' && __firebase_config !== '{}') {
+                try {
+                    firebaseConfig = JSON.parse(__firebase_config);
+                    isCanvasEnv = true;
+                    console.log("Running in Canvas environment.");
+                } catch (e) {
+                    console.error("Failed to parse __firebase_config:", e);
+                }
+            }
+
+            if (!isCanvasEnv) {
+                console.log("Running in external environment, using user-provided config.");
+                firebaseConfig = {
+                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
+                  authDomain: "my-ocr-app-5668e.firebaseapp.com",
                   projectId: "my-ocr-app-5668e",
                   storageBucket: "my-ocr-app-5668e.firebasestorage.app",
                   messagingSenderId: "953157989165",
                   appId: "1:953157989165:web:30af95785f2264d89099a4"
                 };
-                // ▲▲▲▲▲ ここまで ▲▲▲▲▲
+            }
 
-                // 接続情報が入力されているかチェック
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
-                    // Canvas環境の自動提供情報を試す
-                    const envConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                    const envConfig = JSON.parse(envConfigStr);
-                    if(envConfig.apiKey) {
-                        Object.assign(firebaseConfig, envConfig);
-                    } else {
-                        throw new Error("Firebaseの接続情報が正しく設定されていません。");
-                    }
+            try {
+                if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
+                    throw new Error("Firebaseの接続情報が正しく設定されていません。");
                 }
-                
+
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 外部サイトでは匿名認証のみを使用
-                await signInAnonymously(auth);
+                if (isCanvasEnv) {
+                    const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                    if (authToken) {
+                        await signInWithCustomToken(auth, authToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                }
                 
                 console.log("Firebase initialized and signed in.");
                 return true;
+
             } catch (e) {
                 console.error("Firebase initialization failed:", e);
-                initErrorMessage.textContent = `データベースに接続できませんでした。(${e.message})`;
+                let errorMessage = `データベースに接続できませんでした。(${e.message})`;
+                if (e.code === 'auth/configuration-not-found') {
+                    errorMessage = "データベース接続エラー: Firebaseプロジェクトで「匿名認証」が有効になっていない可能性があります。Firebaseコンソールの Authentication > Sign-in method タブで匿名認証を有効にしてください。";
+                }
+                initErrorMessage.textContent = errorMessage;
                 initErrorContainer.classList.remove('hidden');
                 modeSelection.classList.add('hidden');
                 return false;
@@ -350,10 +367,16 @@
 
                 const { data: { text } } = await worker.recognize(cropCanvas);
                 const digitsOnly = text.replace(/\D/g, "");
+                
                 if (digitsOnly.length === 3) {
+                    // 【修正点】UI更新とDB書き込みを分離
                     senderResultText.textContent = `${digitsOnly} km/h`;
-                    const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
-                    await setDoc(sessionDocRef, { result: digitsOnly, updatedAt: serverTimestamp() });
+                    try {
+                        const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
+                        await setDoc(sessionDocRef, { result: digitsOnly, updatedAt: serverTimestamp() });
+                    } catch (dbError) {
+                        console.error("Firestore write failed:", dbError);
+                    }
                 }
             } catch (error) {
                 console.error('Recognition error:', error);
