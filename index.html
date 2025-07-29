@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カメラOCRアプリ (複数端末連携版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader { border-top-color: #3498db; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #viewfinder {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 80%;
+            height: 30%;
+            transform: translate(-50%, -50%);
+            border: 3px solid #3498db;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            border-radius: 0.5rem;
+        }
+        /* 入力フィールドのスタイル調整 */
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl bg-white rounded-xl shadow-lg p-6 md:p-8">
+
+        <!-- 1. モード選択画面 -->
+        <div id="mode-selection">
+            <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-4">モードを選択</h1>
+            <p class="text-center text-gray-500 mb-8">どのように利用しますか？</p>
+            <div class="flex flex-col md:flex-row gap-4">
+                <button id="sender-mode-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-lg transition-colors text-lg">
+                    カメラ（送信側）
+                </button>
+                <button id="receiver-mode-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-lg transition-colors text-lg">
+                    結果表示（受信側）
+                </button>
+            </div>
+        </div>
+        
+        <!-- 2. カメラ（送信側）のUI -->
+        <div id="sender-content" class="hidden">
+             <div id="status-container" class="text-center p-4 bg-gray-100 rounded-lg">
+                <div id="loader" class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto mb-4"></div>
+                <p id="status-text" class="text-gray-700 font-semibold">OCRエンジンの準備をしています...</p>
+                <p id="status-detail" class="text-sm text-gray-500 mt-1">（初回は1分ほどかかる場合があります）</p>
+                <button id="retry-button" class="hidden mt-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">再試行</button>
+            </div>
+            <div id="sender-main" class="hidden">
+                <div class="mb-4 p-3 bg-blue-100 border-l-4 border-blue-500 rounded-r-lg">
+                    <p class="text-blue-800">受信側の端末で、以下のセッションIDを入力してください。</p>
+                    <p id="session-id-display" class="text-2xl font-bold text-center text-blue-900 tracking-widest mt-2"></p>
+                </div>
+                <div class="relative w-full aspect-video bg-gray-200 rounded-lg overflow-hidden mb-4 border-2 border-gray-300">
+                    <video id="video" class="w-full h-full object-cover" playsinline autoplay muted></video>
+                    <div id="viewfinder"></div>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-4 mb-6 items-center">
+                    <button id="start-button" class="w-full sm:w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center">
+                        <svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                        <span>カメラを起動</span>
+                    </button>
+                    <div class="w-full sm:w-1/2 flex items-center justify-center">
+                        <label for="realtime-toggle" class="flex items-center cursor-pointer">
+                            <div class="relative"><input type="checkbox" id="realtime-toggle" class="sr-only peer" disabled><div class="block bg-gray-300 w-14 h-8 rounded-full peer-checked:bg-green-500 transition"></div><div class="dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform transform peer-checked:translate-x-6"></div></div>
+                            <div class="ml-3 text-gray-700 font-medium transition-colors peer-checked:text-green-600 peer-checked:font-bold">リアルタイム認識</div>
+                        </label>
+                    </div>
+                </div>
+                <p class="text-center text-sm text-gray-500">認識結果は受信側端末に表示されます。</p>
+            </div>
+        </div>
+
+        <!-- 3. 結果表示（受信側）のUI -->
+        <div id="receiver-content" class="hidden">
+            <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-4">結果表示</h1>
+            <div id="receiver-input-section">
+                <p class="text-center text-gray-500 mb-4">カメラ側の端末に表示されている5桁のセッションIDを入力してください。</p>
+                <input type="number" id="session-id-input" class="w-full text-center text-3xl p-3 border-2 border-gray-300 rounded-lg tracking-widest" placeholder="12345">
+                <button id="connect-btn" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg text-lg">接続</button>
+            </div>
+            <div id="receiver-display-section" class="hidden">
+                <p class="text-center text-gray-600">セッションID: <span id="display-session-id" class="font-bold"></span></p>
+                <div class="my-8 text-center">
+                    <p id="receiver-result-text" class="text-8xl font-mono font-bold text-gray-800">--- k/h</p>
+                    <p id="receiver-status" class="text-gray-500 mt-2">カメラからのデータ待機中...</p>
+                </div>
+                <button id="disconnect-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">接続を解除</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display: none;"></canvas>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DOM要素の取得 ---
+        const modeSelection = document.getElementById('mode-selection');
+        const senderContent = document.getElementById('sender-content');
+        const receiverContent = document.getElementById('receiver-content');
+        const senderModeBtn = document.getElementById('sender-mode-btn');
+        const receiverModeBtn = document.getElementById('receiver-mode-btn');
+
+        // 送信側
+        const statusContainer = document.getElementById('status-container');
+        const loader = document.getElementById('loader');
+        const statusText = document.getElementById('status-text');
+        const statusDetail = document.getElementById('status-detail');
+        const retryButton = document.getElementById('retry-button');
+        const senderMain = document.getElementById('sender-main');
+        const sessionIdDisplay = document.getElementById('session-id-display');
+        const video = document.getElementById('video');
+        const viewfinder = document.getElementById('viewfinder');
+        const startButton = document.getElementById('start-button');
+        const startButtonText = startButton.querySelector('span');
+        const realtimeToggle = document.getElementById('realtime-toggle');
+        const canvas = document.getElementById('canvas');
+
+        // 受信側
+        const receiverInputSection = document.getElementById('receiver-input-section');
+        const sessionIdInput = document.getElementById('session-id-input');
+        const connectBtn = document.getElementById('connect-btn');
+        const receiverDisplaySection = document.getElementById('receiver-display-section');
+        const displaySessionId = document.getElementById('display-session-id');
+        const receiverResultText = document.getElementById('receiver-result-text');
+        const receiverStatus = document.getElementById('receiver-status');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        
+        // --- グローバル変数 ---
+        let db;
+        let worker = null;
+        let stream = null;
+        let recognitionIntervalId = null;
+        let isRecognizing = false;
+        let currentSessionId = null;
+        let unsubscribe = null; // Firestoreのリスナー解除用
+
+        // --- Firebaseの初期化 ---
+        try {
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            alert("データベースの初期化に失敗しました。");
+        }
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- モード選択ロジック ---
+        senderModeBtn.addEventListener('click', () => {
+            modeSelection.classList.add('hidden');
+            senderContent.classList.remove('hidden');
+            initializeOCR();
+        });
+
+        receiverModeBtn.addEventListener('click', () => {
+            modeSelection.classList.add('hidden');
+            receiverContent.classList.remove('hidden');
+        });
+
+        // --- 送信側ロジック ---
+        async function initializeOCR() {
+            loader.classList.remove('hidden');
+            retryButton.classList.add('hidden');
+            statusText.textContent = 'OCRエンジンの準備をしています...';
+            statusDetail.textContent = '（初回は1分ほどかかる場合があります）';
+
+            try {
+                worker = await Tesseract.createWorker('eng', 1, {
+                    logger: m => {
+                        console.log(m);
+                        statusDetail.textContent = `${m.status} (${(m.progress * 100 || 0).toFixed(0)}%)`;
+                    }
+                });
+                await worker.setParameters({ tessedit_char_whitelist: '0123456789' });
+                
+                statusContainer.classList.add('hidden');
+                senderMain.classList.remove('hidden');
+                currentSessionId = Math.floor(10000 + Math.random() * 90000).toString();
+                sessionIdDisplay.textContent = currentSessionId;
+            } catch (error) {
+                console.error('OCR initialization failed:', error);
+                loader.classList.add('hidden');
+                statusText.textContent = 'OCRエンジンの初期化に失敗しました。';
+                statusDetail.textContent = 'ネットワーク環境を確認し、再試行してください。';
+                retryButton.classList.remove('hidden');
+            }
+        }
+
+        async function toggleCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+                startButtonText.textContent = 'カメラを起動';
+                realtimeToggle.checked = false;
+                realtimeToggle.disabled = true;
+                if (recognitionIntervalId) clearInterval(recognitionIntervalId);
+                recognitionIntervalId = null;
+            } else {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                    video.srcObject = stream;
+                    await video.play();
+                    startButtonText.textContent = 'カメラを停止';
+                    realtimeToggle.disabled = false;
+                } catch (err) {
+                    alert('カメラの起動に失敗しました。ブラウザの設定でカメラへのアクセスを許可してください。');
+                }
+            }
+        }
+
+        function handleRealtimeToggle() {
+            if (realtimeToggle.checked) {
+                if (recognitionIntervalId === null) {
+                    recognizeText();
+                    recognitionIntervalId = setInterval(recognizeText, 1500);
+                }
+            } else {
+                if (recognitionIntervalId !== null) {
+                    clearInterval(recognitionIntervalId);
+                    recognitionIntervalId = null;
+                }
+            }
+        }
+
+        async function recognizeText() {
+            if (isRecognizing || !stream) return;
+            isRecognizing = true;
+            
+            try {
+                const videoRect = video.getBoundingClientRect();
+                const viewfinderRect = viewfinder.getBoundingClientRect();
+                const scaleX = video.videoWidth / videoRect.width;
+                const scaleY = video.videoHeight / videoRect.height;
+                const cropX = (viewfinderRect.left - videoRect.left) * scaleX;
+                const cropY = (viewfinderRect.top - videoRect.top) * scaleY;
+                const cropWidth = viewfinderRect.width * scaleX;
+                const cropHeight = viewfinderRect.height * scaleY;
+                
+                const cropCanvas = document.createElement('canvas');
+                cropCanvas.width = cropWidth;
+                cropCanvas.height = cropHeight;
+                const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+                cropCtx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+                const imageData = cropCtx.getImageData(0, 0, cropCanvas.width, cropCanvas.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    const color = avg > 128 ? 255 : 0;
+                    data[i] = data[i + 1] = data[i + 2] = color;
+                }
+                cropCtx.putImageData(imageData, 0, 0);
+
+                const { data: { text } } = await worker.recognize(cropCanvas);
+                const digitsOnly = text.replace(/\D/g, "");
+                if (digitsOnly.length === 3) {
+                    // Firestoreに書き込み
+                    const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
+                    await setDoc(sessionDocRef, { 
+                        result: digitsOnly,
+                        updatedAt: serverTimestamp()
+                    });
+                }
+            } catch (error) {
+                console.error('Recognition error:', error);
+            } finally {
+                isRecognizing = false;
+            }
+        }
+
+        retryButton.addEventListener('click', initializeOCR);
+        startButton.addEventListener('click', toggleCamera);
+        realtimeToggle.addEventListener('change', handleRealtimeToggle);
+
+        // --- 受信側ロジック ---
+        connectBtn.addEventListener('click', () => {
+            const inputId = sessionIdInput.value.trim();
+            if (inputId.length === 5 && /^\d+$/.test(inputId)) {
+                currentSessionId = inputId;
+                startListening();
+            } else {
+                alert('有効な5桁のセッションIDを入力してください。');
+            }
+        });
+
+        function startListening() {
+            receiverInputSection.classList.add('hidden');
+            receiverDisplaySection.classList.remove('hidden');
+            displaySessionId.textContent = currentSessionId;
+
+            const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
+            unsubscribe = onSnapshot(sessionDocRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    receiverResultText.textContent = `${data.result} k/h`;
+                    receiverStatus.textContent = `最終更新: ${new Date().toLocaleTimeString()}`;
+                } else {
+                    receiverResultText.textContent = `--- k/h`;
+                    receiverStatus.textContent = 'セッションが見つかりません。IDを確認してください。';
+                }
+            });
+        }
+
+        disconnectBtn.addEventListener('click', () => {
+            if (unsubscribe) {
+                unsubscribe(); // リスナーを解除
+                unsubscribe = null;
+            }
+            currentSessionId = null;
+            receiverDisplaySection.classList.add('hidden');
+            receiverInputSection.classList.remove('hidden');
+            sessionIdInput.value = '';
+        });
+
+    </script>
+</body>
+</html>
