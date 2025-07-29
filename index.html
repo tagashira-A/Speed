@@ -3,25 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>カメラOCRアプリ (複数端末連携版)</title>
+    <title>カメラOCRアプリ (複数端末連携・改善版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .loader { border-top-color: #3498db; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        /* 【修正点】ビューファインダーのサイズを変更 */
         #viewfinder {
             position: absolute;
             left: 50%;
             top: 50%;
-            width: 80%;
-            height: 30%;
+            width: 60%; /* 横に狭く */
+            height: 40%; /* 縦に大きく */
             transform: translate(-50%, -50%);
             border: 3px solid #3498db;
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
             border-radius: 0.5rem;
         }
-        /* 入力フィールドのスタイル調整 */
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none;
@@ -35,6 +35,12 @@
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-2xl bg-white rounded-xl shadow-lg p-6 md:p-8">
+
+        <!-- 0. 初期化エラー表示 -->
+        <div id="init-error-container" class="hidden text-center p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            <h3 class="font-bold text-lg">接続エラー</h3>
+            <p id="init-error-message" class="mt-2">データベースに接続できませんでした。この環境ではアプリを利用できない可能性があります。</p>
+        </div>
 
         <!-- 1. モード選択画面 -->
         <div id="mode-selection">
@@ -67,6 +73,9 @@
                     <video id="video" class="w-full h-full object-cover" playsinline autoplay muted></video>
                     <div id="viewfinder"></div>
                 </div>
+                <div class="text-center my-2">
+                    <p id="sender-result-text" class="text-4xl font-mono font-bold text-gray-800">--- km/h</p>
+                </div>
                 <div class="flex flex-col sm:flex-row gap-4 mb-6 items-center">
                     <button id="start-button" class="w-full sm:w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center">
                         <svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
@@ -79,7 +88,6 @@
                         </label>
                     </div>
                 </div>
-                <p class="text-center text-sm text-gray-500">認識結果は受信側端末に表示されます。</p>
             </div>
         </div>
 
@@ -94,7 +102,7 @@
             <div id="receiver-display-section" class="hidden">
                 <p class="text-center text-gray-600">セッションID: <span id="display-session-id" class="font-bold"></span></p>
                 <div class="my-8 text-center">
-                    <p id="receiver-result-text" class="text-8xl font-mono font-bold text-gray-800">--- k/h</p>
+                    <p id="receiver-result-text" class="text-8xl font-mono font-bold text-gray-800">--- km/h</p>
                     <p id="receiver-status" class="text-gray-500 mt-2">カメラからのデータ待機中...</p>
                 </div>
                 <button id="disconnect-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">接続を解除</button>
@@ -107,9 +115,12 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM要素の取得 ---
+        const initErrorContainer = document.getElementById('init-error-container');
+        const initErrorMessage = document.getElementById('init-error-message');
         const modeSelection = document.getElementById('mode-selection');
         const senderContent = document.getElementById('sender-content');
         const receiverContent = document.getElementById('receiver-content');
@@ -129,6 +140,7 @@
         const startButton = document.getElementById('start-button');
         const startButtonText = startButton.querySelector('span');
         const realtimeToggle = document.getElementById('realtime-toggle');
+        const senderResultText = document.getElementById('sender-result-text');
         const canvas = document.getElementById('canvas');
 
         // 受信側
@@ -143,23 +155,46 @@
         
         // --- グローバル変数 ---
         let db;
+        let auth;
         let worker = null;
         let stream = null;
         let recognitionIntervalId = null;
         let isRecognizing = false;
         let currentSessionId = null;
-        let unsubscribe = null; // Firestoreのリスナー解除用
+        let unsubscribe = null;
 
-        // --- Firebaseの初期化 ---
-        try {
-            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-        } catch (e) {
-            console.error("Firebase initialization failed:", e);
-            alert("データベースの初期化に失敗しました。");
-        }
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- Firebaseの初期化と認証 ---
+        async function initializeFirebase() {
+            try {
+                const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                const firebaseConfig = JSON.parse(firebaseConfigStr);
+
+                if (!firebaseConfig.apiKey) {
+                    throw new Error("Firebaseの接続情報がありません。");
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (authToken) {
+                    await signInWithCustomToken(auth, authToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                console.log("Firebase initialized and signed in.");
+                return true;
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+                initErrorMessage.textContent = `データベースに接続できませんでした。(${e.message})`;
+                initErrorContainer.classList.remove('hidden');
+                modeSelection.classList.add('hidden');
+                return false;
+            }
+        }
 
         // --- モード選択ロジック ---
         senderModeBtn.addEventListener('click', () => {
@@ -270,7 +305,7 @@
                 const { data: { text } } = await worker.recognize(cropCanvas);
                 const digitsOnly = text.replace(/\D/g, "");
                 if (digitsOnly.length === 3) {
-                    // Firestoreに書き込み
+                    senderResultText.textContent = `${digitsOnly} km/h`;
                     const sessionDocRef = doc(db, `artifacts/${appId}/public/data/ocr-sessions`, currentSessionId);
                     await setDoc(sessionDocRef, { 
                         result: digitsOnly,
@@ -308,10 +343,10 @@
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
-                    receiverResultText.textContent = `${data.result} k/h`;
+                    receiverResultText.textContent = `${data.result} km/h`;
                     receiverStatus.textContent = `最終更新: ${new Date().toLocaleTimeString()}`;
                 } else {
-                    receiverResultText.textContent = `--- k/h`;
+                    receiverResultText.textContent = `--- km/h`;
                     receiverStatus.textContent = 'セッションが見つかりません。IDを確認してください。';
                 }
             });
@@ -319,14 +354,18 @@
 
         disconnectBtn.addEventListener('click', () => {
             if (unsubscribe) {
-                unsubscribe(); // リスナーを解除
+                unsubscribe();
                 unsubscribe = null;
             }
             currentSessionId = null;
             receiverDisplaySection.classList.add('hidden');
             receiverInputSection.classList.remove('hidden');
             sessionIdInput.value = '';
+            receiverResultText.textContent = '--- km/h';
         });
+
+        // --- アプリケーションの開始 ---
+        initializeFirebase();
 
     </script>
 </body>
