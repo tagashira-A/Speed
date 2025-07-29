@@ -115,7 +115,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM要素の取得 ---
@@ -163,36 +163,42 @@
         let currentSessionId = null;
         let unsubscribe = null;
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const appId = 'default-app-id'; // 外部サイトでは固定値を使用
 
         // --- Firebaseの初期化と認証 ---
         async function initializeFirebase() {
             try {
-                // 【重要】この部分をご自身のFirebase接続情報に置き換えてください
+                // ▼▼▼▼▼ 【最重要】この部分をご自身のFirebase接続情報に置き換えてください ▼▼▼▼▼
+                // Firebaseプロジェクトからコピーした const firebaseConfig = { ... }; を
+                // この下の行に貼り付けてください。コメントアウトは必ず解除してください。
                 const firebaseConfig = {
-                  // apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
-                  // authDomain: "my-ocr-app-5668e.firebaseapp.com",
-                  // projectId: "my-ocr-app-5668e",
-                  // storageBucket: "my-ocr-app-5668e.firebasestorage.app",
-                  // messagingSenderId: "953157989165",
-                  // appId: "1:953157989165:web:30af95785f2264d89099a4"
+                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY", // 例: "AIzaSyB..."
+                  authDomain: "my-ocr-app-5668e.firebaseapp.com", // 例: "my-project.firebaseapp.com"
+                  projectId: "my-ocr-app-5668e",
+                  storageBucket: "my-ocr-app-5668e.firebasestorage.app",
+                  messagingSenderId: "953157989165",
+                  appId: "1:953157989165:web:30af95785f2264d89099a4"
                 };
+                // ▲▲▲▲▲ ここまで ▲▲▲▲▲
 
-                // Canvas環境で自動提供される情報があればそちらを優先する
-                const envConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                const envConfig = JSON.parse(envConfigStr);
-
-                const finalConfig = envConfig.apiKey ? envConfig : firebaseConfig;
-
-                if (!finalConfig.apiKey) throw new Error("Firebaseの接続情報がありません。");
+                // 接続情報が入力されているかチェック
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+                    // Canvas環境の自動提供情報を試す
+                    const envConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                    const envConfig = JSON.parse(envConfigStr);
+                    if(envConfig.apiKey) {
+                        Object.assign(firebaseConfig, envConfig);
+                    } else {
+                        throw new Error("Firebaseの接続情報が正しく設定されていません。");
+                    }
+                }
                 
-                const app = initializeApp(finalConfig);
+                const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (authToken) await signInWithCustomToken(auth, authToken);
-                else await signInAnonymously(auth);
+                // 外部サイトでは匿名認証のみを使用
+                await signInAnonymously(auth);
                 
                 console.log("Firebase initialized and signed in.");
                 return true;
