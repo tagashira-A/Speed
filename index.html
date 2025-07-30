@@ -176,7 +176,6 @@
             let firebaseConfig;
             let isCanvasEnv = false;
 
-            // Canvas環境で自動提供される情報があるかチェック
             if (typeof __firebase_config !== 'undefined' && __firebase_config !== '{}') {
                 try {
                     firebaseConfig = JSON.parse(__firebase_config);
@@ -184,7 +183,6 @@
                 } catch (e) { /* Failsafe */ }
             }
 
-            // Canvas環境でない場合、ユーザーが設定した固定の接続情報を使用
             if (!isCanvasEnv) {
                 // ▼▼▼▼▼ 【最重要】この部分をご自身のFirebase接続情報に置き換えてください ▼▼▼▼▼
                 firebaseConfig = {
@@ -331,7 +329,7 @@
         async function updateFirestore() {
             if (!currentSessionId || !db) return;
             try {
-                const appId = 'default-app-id'; // Use a consistent appId for external sites
+                const appId = 'pitch-tracker-app'; // 外部サイト用に固定のIDを使用
                 const sessionDocRef = doc(db, `artifacts/${appId}/public/data/pitch-sessions`, currentSessionId);
                 await setDoc(sessionDocRef, { pitches });
             } catch (error) {
@@ -340,7 +338,7 @@
         }
 
         function startListening(sessionId) {
-            const appId = 'default-app-id'; // Use a consistent appId for external sites
+            const appId = 'pitch-tracker-app'; // 外部サイト用に固定のIDを使用
             const sessionDocRef = doc(db, `artifacts/${appId}/public/data/pitch-sessions`, sessionId);
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
                 if (doc.exists()) {
