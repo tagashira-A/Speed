@@ -86,27 +86,32 @@
                                 <button data-digit="1" data-value="9" class="input-btn p-1.5 border rounded-md bg-gray-200">9</button>
                             </div>
                         </div>
-                        <!-- 球種と操作ボタンのレイアウト -->
-                        <div class="grid grid-cols-2 gap-4 pt-2">
-                            <!-- Left Column -->
-                            <div class="space-y-2">
-                                <div>
-                                    <label class="font-bold text-gray-700 text-sm">球種</label>
-                                    <div id="pitch-type-selector" class="grid grid-cols-3 gap-2 mt-1">
+                        <!-- 【修正点】球種と操作ボタンのレイアウトを全面的に変更 -->
+                        <div class="space-y-3 pt-2">
+                            <div>
+                                <label class="font-bold text-gray-700 text-sm">球種</label>
+                                <div class="grid grid-cols-2 gap-4 mt-1">
+                                    <div id="pitch-type-selector" class="grid grid-cols-3 gap-2">
                                         <!-- Icons will be inserted here by JS -->
                                     </div>
+                                    <div class="space-y-2">
+                                        <button id="error-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg">Error</button>
+                                        <button id="send-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg text-lg">送信</button>
+                                    </div>
                                 </div>
-                                <!-- 【修正点】送信ボタンをこちらに移動 -->
-                                <button id="send-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg text-lg">送信</button>
-                                <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg">リセット</button>
                             </div>
-                            <!-- Right Column -->
-                            <div class="space-y-2 flex flex-col">
-                                <button id="error-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg">Error</button>
-                                <!-- 【修正点】1球戻るボタンをこちらに移動 -->
-                                <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg">1球戻る</button>
-                                <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-lg">チェンジ</button>
-                                <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg">投手交代</button>
+                            <div>
+                                <label class="font-bold text-gray-700 text-sm">操作</label>
+                                <div class="grid grid-cols-2 gap-4 mt-1">
+                                    <div class="space-y-2">
+                                        <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg">1球戻る</button>
+                                        <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg">投手交代</button>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-lg">チェンジ</button>
+                                        <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg">リセット</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
