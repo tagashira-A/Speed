@@ -165,19 +165,22 @@
         let pitches = [];
         let currentSpeed = { 100: '1', 10: null, 1: null };
         let currentPitchType = 'circle';
-        let dbCollectionPath = ''; // 【修正点】データベースのパスを格納する変数
+        // 【修正点】球種に名前を追加
         const PITCH_TYPES = [
-            { id: 'circle', icon: '#icon-circle' }, { id: 'tri-right', icon: '#icon-tri-right' },
-            { id: 'tri-br', icon: '#icon-tri-br' }, { id: 'tri-down', icon: '#icon-tri-down' },
-            { id: 'tri-bl', icon: '#icon-tri-bl' }, { id: 'tri-left', icon: '#icon-tri-left' }
+            { id: 'circle', icon: '#icon-circle', name: 'ストレート系' }, 
+            { id: 'tri-right', icon: '#icon-tri-right', name: 'スライダー系' },
+            { id: 'tri-br', icon: '#icon-tri-br', name: 'カーブ系' }, 
+            { id: 'tri-down', icon: '#icon-tri-down', name: 'フォーク系' },
+            { id: 'tri-bl', icon: '#icon-tri-bl', name: 'シンカー系' }, 
+            { id: 'tri-left', icon: '#icon-tri-left', name: 'シュート系' }
         ];
+        let dbCollectionPath = '';
 
         // --- Firebaseの初期化 ---
         async function initializeFirebase() {
             let firebaseConfig;
             let isCanvasEnv = false;
 
-            // Canvas環境で自動提供される情報があるかチェック
             if (typeof __firebase_config !== 'undefined' && __firebase_config !== '{}') {
                 try {
                     firebaseConfig = JSON.parse(__firebase_config);
@@ -185,18 +188,15 @@
                 } catch (e) { /* Failsafe */ }
             }
 
-            // Canvas環境でない場合、ユーザーが設定した固定の接続情報を使用
             if (!isCanvasEnv) {
-                // ▼▼▼▼▼ 【最重要】この部分をご自身のFirebase接続情報に置き換えてください ▼▼▼▼▼
                 firebaseConfig = {
-                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
-                  authDomain: "my-ocr-app-5668e.firebaseapp.com",
-                  projectId: "my-ocr-app-5668e",
-                  storageBucket: "my-ocr-app-5668e.firebasestorage.app",
-                  messagingSenderId: "953157989165",
-                  appId: "1:953157989165:web:30af95785f2264d89099a4"
+                  apiKey: "YOUR_API_KEY",
+                  authDomain: "YOUR_AUTH_DOMAIN",
+                  projectId: "YOUR_PROJECT_ID",
+                  storageBucket: "YOUR_STORAGE_BUCKET",
+                  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                  appId: "YOUR_APP_ID"
                 };
-                // ▲▲▲▲▲ ここまで ▲▲▲▲▲
             }
 
             try {
@@ -208,7 +208,6 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 環境に応じて認証方法とDBパスを切り替える
                 if (isCanvasEnv) {
                     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                     dbCollectionPath = `artifacts/${appId}/public/data/pitch-sessions`;
@@ -259,11 +258,13 @@
                     </div>`;
                 }
                 
-                const icon = PITCH_TYPES.find(p => p.id === pitch.type)?.icon || '#icon-circle';
+                // 【修正点】球種オブジェクトを取得
+                const pitchType = PITCH_TYPES.find(p => p.id === pitch.type) || { icon: '#icon-circle', name: '' };
                 
                 return `<div class="flex items-center p-2 rounded-md ${bgColor}">
                     <span class="font-bold w-8">${pitchNumber}.</span>
-                    <svg viewbox="0 0 20 20" width="20" height="20"><use href="${icon}" /></svg>
+                    <svg viewbox="0 0 20 20" width="20" height="20"><use href="${pitchType.icon}" /></svg>
+                    <span class="text-sm text-gray-700 w-24 text-center">${pitchType.name}</span>
                     <div class="ml-auto flex items-baseline">
                         ${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}
                         <span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span>
@@ -404,4 +405,3 @@
     </script>
 </body>
 </html>
-
