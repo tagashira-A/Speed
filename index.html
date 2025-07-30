@@ -13,7 +13,7 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-2 md:p-4">
 
-    <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-3 md:p-4">
+    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-3 md:p-4">
 
         <!-- 0. 初期化エラー表示 -->
         <div id="init-error-container" class="hidden text-center p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
@@ -38,6 +38,10 @@
                 <!-- 入力パネル (送信側のみ表示) -->
                 <div id="sender-panel" class="lg:col-span-1 hidden">
                     <div class="space-y-3">
+                        <div class="p-2 bg-blue-100 border-l-4 border-blue-500 rounded-r-lg">
+                            <p class="text-blue-800 text-sm">受信側の端末で、以下のセッションIDを入力してください。</p>
+                            <p id="sender-session-id" class="text-2xl font-bold text-center text-blue-900 tracking-widest mt-1"></p>
+                        </div>
                         <!-- 投手選択UI -->
                         <div>
                             <label class="font-bold text-gray-700 text-sm">投手</label>
@@ -98,15 +102,34 @@
                              <div class="grid grid-cols-2 gap-2 mt-2">
                                 <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 rounded-lg">1球戻る</button>
                                 <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg">リセット</button>
-                            </div>
+                             </div>
+                             <div class="grid grid-cols-2 gap-2 mt-2">
+                                <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 rounded-lg">投手交代</button>
+                                <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 rounded-lg">チェンジ</button>
+                             </div>
                         </div>
                     </div>
                 </div>
                 
+                <!-- 【修正点】最新の投球表示パネル (受信側のみ) -->
+                <div id="latest-pitch-panel" class="lg:col-span-1 hidden">
+                    <div class="mb-2 p-2 bg-gray-100 border-l-4 border-green-500 rounded-r-lg flex justify-between items-center">
+                         <p class="font-bold text-lg text-gray-800">最新の投球</p>
+                         <p id="latest-inning-display" class="font-bold text-lg text-gray-800"></p>
+                    </div>
+                    <div id="latest-pitch-display" class="h-96 lg:h-[520px] border rounded-lg p-4 flex flex-col items-center justify-center text-center bg-white">
+                        <p class="text-gray-500">データ待機中...</p>
+                    </div>
+                </div>
+
                 <!-- 履歴パネル -->
                 <div id="history-panel" class="lg:col-span-1">
-                    <div class="mb-2 p-2 bg-gray-100 border-l-4 border-gray-500 rounded-r-lg">
-                        <p class="text-gray-800 text-sm">セッションID: <span id="session-id-display" class="font-bold text-base tracking-widest"></span></p>
+                    <div class="mb-2 p-2 bg-gray-100 border-l-4 border-gray-500 rounded-r-lg flex justify-between items-center">
+                        <div id="history-header-left">
+                            <p id="receiver-session-id-container" class="text-gray-800 text-sm">セッションID: <span id="receiver-session-id" class="font-bold text-base tracking-widest"></span></p>
+                            <p id="sender-pitch-count-container" class="text-gray-800 text-sm hidden">イニング投球数: <span id="sender-pitch-count" class="font-bold text-base">0</span></p>
+                        </div>
+                        <p id="inning-display" class="font-bold text-lg text-gray-800"></p>
                     </div>
                     <div class="h-96 lg:h-[520px] overflow-y-auto border rounded-lg p-2 space-y-2 bg-gray-50">
                         <div id="history-list">
@@ -120,7 +143,7 @@
         <!-- 受信側 接続画面 -->
         <div id="receiver-connect-screen" class="hidden">
             <h1 class="text-xl md:text-2xl font-bold text-center text-gray-800 mb-4">データ表示に接続</h1>
-            <p class="text-center text-gray-500 mb-4">入力側の端末に表示されている5桁のセッションIDを入力してください。</p>
+            <p class="text-center text-gray-500 mb-4">入力側の画面上部に表示されている5桁のセッションIDを入力してください。</p>
             <input type="number" id="session-id-input" class="w-full text-center text-2xl p-3 border-2 border-gray-300 rounded-lg tracking-widest" placeholder="12345">
             <button id="connect-btn" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg">接続</button>
         </div>
@@ -154,6 +177,9 @@
         const senderPanel = document.getElementById('sender-panel');
         const historyPanel = document.getElementById('history-panel');
         const receiverConnectScreen = document.getElementById('receiver-connect-screen');
+        const latestPitchPanel = document.getElementById('latest-pitch-panel');
+        const latestPitchDisplay = document.getElementById('latest-pitch-display');
+        const latestInningDisplay = document.getElementById('latest-inning-display');
 
         const speedDisplay = document.getElementById('speed-display');
         const pitchTypeSelector = document.getElementById('pitch-type-selector');
@@ -163,17 +189,29 @@
         const undoBtn = document.getElementById('undo-btn');
         const resetBtn = document.getElementById('reset-btn');
         const handSelector = document.getElementById('hand-selector');
+        const changePitcherBtn = document.getElementById('change-pitcher-btn');
+        const changeInningBtn = document.getElementById('change-inning-btn');
         
         const sessionIdInput = document.getElementById('session-id-input');
         const connectBtn = document.getElementById('connect-btn');
-        const sessionIdDisplay = document.querySelectorAll('#session-id-display');
+        const senderSessionId = document.getElementById('sender-session-id');
+        const receiverSessionIdContainer = document.getElementById('receiver-session-id-container');
+        const receiverSessionId = document.getElementById('receiver-session-id');
+        const senderPitchCountContainer = document.getElementById('sender-pitch-count-container');
+        const senderPitchCount = document.getElementById('sender-pitch-count');
+        const inningDisplay = document.getElementById('inning-display');
 
         // --- グローバル変数 ---
         let db;
         let auth;
         let currentSessionId = null;
         let unsubscribe = null;
-        let pitches = [];
+        
+        const getDefaultGameData = () => ({
+            log: JSON.stringify([{ type: 'inning_change', inning: 1, topOrBottom: 'top' }])
+        });
+        let gameData = { log: JSON.parse(getDefaultGameData().log) };
+
         let currentHand = 'right';
         let currentSpeed = { 100: '1', 10: null, 1: null };
         let currentPitchType = 'circle';
@@ -201,12 +239,12 @@
 
             if (!isCanvasEnv) {
                 firebaseConfig = {
-                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
-                  authDomain: "my-ocr-app-5668e.firebaseapp.com",
-                  projectId: "my-ocr-app-5668e",
-                  storageBucket: "my-ocr-app-5668e.firebasestorage.app",
-                  messagingSenderId: "953157989165",
-                  appId: "1:953157989165:web:30af95785f2264d89099a4"
+                  apiKey: "YOUR_API_KEY",
+                  authDomain: "YOUR_AUTH_DOMAIN",
+                  projectId: "YOUR_PROJECT_ID",
+                  storageBucket: "YOUR_STORAGE_BUCKET",
+                  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                  appId: "YOUR_APP_ID"
                 };
             }
 
@@ -256,47 +294,134 @@
         }
 
         function renderHistory() {
-            const maxSpeed = Math.max(0, ...pitches.filter(p => p.speed !== 'Error').map(p => p.speed));
+            const log = gameData.log || [];
+            if (log.length === 0) return;
+
+            const allPitches = log.filter(item => item.type === 'pitch');
+            const maxSpeed = Math.max(0, ...allPitches.filter(p => p.speed !== 'Error').map(p => p.speed));
             const leftHandSwap = {
                 'tri-right': 'tri-left', 'tri-left':  'tri-right',
                 'tri-br': 'tri-bl', 'tri-bl': 'tri-br'
             };
 
-            historyList.innerHTML = pitches.slice().reverse().map((pitch, index) => {
-                const pitchNumber = pitches.length - index;
-                const isMax = pitch.speed !== 'Error' && pitch.speed === maxSpeed;
-                const bgColor = (pitches.length - 1 - index) % 2 === 0 ? 'bg-white' : 'bg-gray-100';
+            historyList.innerHTML = '';
+            
+            let pitcherCounters = {};
+            let pitcherIndex = { top: 0, bottom: 0 };
+            
+            const logWithPitchNumbers = log.map(event => {
+                const eventWithCount = { ...event };
+                const team = event.topOrBottom;
+                if (event.type === 'inning_change') {
+                    pitcherIndex[team] = 0;
+                } else if (event.type === 'pitcher_change') {
+                    pitcherIndex[team]++;
+                } else if (event.type === 'pitch') {
+                    const key = `${team}-${pitcherIndex[team]}`;
+                    pitcherCounters[key] = (pitcherCounters[key] || 0) + 1;
+                    eventWithCount.pitcherPitchNum = pitcherCounters[key];
+                }
+                return eventWithCount;
+            });
 
-                if (pitch.speed === 'Error') {
-                    return `<div class="flex items-center p-2 rounded-md ${bgColor}">
-                        <span class="font-bold w-8">${pitchNumber}.</span>
-                        <span class="font-mono text-base ml-auto text-red-500 font-semibold">Error</span>
-                    </div>`;
-                }
-                
-                const originalPitchType = PITCH_TYPES.find(p => p.id === pitch.type) || { icon: '#icon-circle', name: '' };
-                let displayName = originalPitchType.name;
-                
-                // 【修正点】文字だけを入れ替えるロジック
-                if (pitch.hand === 'left' && leftHandSwap[pitch.type]) {
-                    const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[pitch.type]);
-                    if (swappedPitchType) {
-                        displayName = swappedPitchType.name;
+            let htmlElements = [];
+            logWithPitchNumbers.forEach((event) => {
+                if (event.type === 'inning_change') {
+                    htmlElements.push(`<div class="text-center text-sm font-bold text-gray-600 my-2 p-1 bg-gray-200 rounded">--- ${event.inning}回 ${event.topOrBottom === 'top' ? '表' : '裏'} ---</div>`);
+                } else if (event.type === 'pitcher_change') {
+                    htmlElements.push(`<div class="text-center text-xs text-gray-500 my-1 p-1 bg-gray-100 rounded">--- 投手交代 ---</div>`);
+                } else if (event.type === 'pitch') {
+                    const pitch = event;
+                    const isMax = pitch.speed !== 'Error' && pitch.speed === maxSpeed;
+                    
+                    if (pitch.speed === 'Error') {
+                        htmlElements.push(`<div class="flex items-center p-2 rounded-md">
+                            <span class="font-bold w-8">${pitch.pitcherPitchNum}.</span>
+                            <span class="font-mono text-base ml-auto text-red-500 font-semibold">Error</span>
+                        </div>`);
+                        return;
                     }
+                    
+                    const originalPitchType = PITCH_TYPES.find(p => p.id === pitch.pitchType) || { icon: '#icon-circle', name: '' };
+                    let displayName = originalPitchType.name;
+                    
+                    if (pitch.hand === 'left' && leftHandSwap[pitch.pitchType]) {
+                        const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[pitch.pitchType]);
+                        if (swappedPitchType) displayName = swappedPitchType.name;
+                    }
+                    
+                    htmlElements.push(`<div class="flex items-center p-2 rounded-md">
+                        <span class="font-bold w-8">${pitch.pitcherPitchNum}.</span>
+                        <svg viewbox="0 0 20 20" width="20" height="20"><use href="${originalPitchType.icon}" /></svg>
+                        <span class="text-sm text-gray-700 w-24 text-center">${displayName}</span>
+                        <div class="ml-auto flex items-baseline">
+                            ${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}
+                            <span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span>
+                        </div>
+                    </div>`);
                 }
-                
-                return `<div class="flex items-center p-2 rounded-md ${bgColor}">
-                    <span class="font-bold w-8">${pitchNumber}.</span>
-                    <svg viewbox="0 0 20 20" width="20" height="20"><use href="${originalPitchType.icon}" /></svg>
-                    <span class="text-sm text-gray-700 w-24 text-center">${displayName}</span>
-                    <div class="ml-auto flex items-baseline">
-                        ${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}
-                        <span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span>
-                    </div>
-                </div>`;
+            });
+
+            historyList.innerHTML = htmlElements.reverse().map((html, index) => {
+                const bgColor = index % 2 === 0 ? 'bg-white' : 'bg-gray-100';
+                if (html.includes('class="flex items-center p-2 rounded-md"')) {
+                     return html.replace('class="flex items-center p-2 rounded-md"', `class="flex items-center p-2 rounded-md ${bgColor}"`);
+                }
+                return html;
             }).join('');
+
+            const lastInningEvent = [...log].reverse().find(e => e.type === 'inning_change') || log[0];
+            if(lastInningEvent) {
+                inningDisplay.textContent = `${lastInningEvent.inning}回 ${lastInningEvent.topOrBottom === 'top' ? '表' : '裏'}`;
+                const currentTeamPitches = allPitches.filter(p => p.inning === lastInningEvent.inning && p.topOrBottom === lastInningEvent.topOrBottom);
+                senderPitchCount.textContent = currentTeamPitches.length;
+            }
+
+            renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap);
         }
         
+        function renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap) {
+            if (!latestPitchDisplay) return;
+
+            const lastPitch = [...logWithPitchNumbers].reverse().find(e => e.type === 'pitch');
+            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+            
+            if(lastInningEvent) {
+                latestInningDisplay.textContent = `${lastInningEvent.inning}回 ${lastInningEvent.topOrBottom === 'top' ? '表' : '裏'}`;
+            }
+
+            if (!lastPitch) {
+                latestPitchDisplay.innerHTML = `<p class="text-gray-500">データ待機中...</p>`;
+                return;
+            }
+
+            if (lastPitch.speed === 'Error') {
+                latestPitchDisplay.innerHTML = `
+                    <p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p>
+                    <p class="text-6xl font-bold text-red-500">Error</p>`;
+                return;
+            }
+
+            const originalPitchType = PITCH_TYPES.find(p => p.id === lastPitch.pitchType) || { icon: '#icon-circle', name: '' };
+            let displayName = originalPitchType.name;
+            if (lastPitch.hand === 'left' && leftHandSwap[lastPitch.pitchType]) {
+                const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[lastPitch.pitchType]);
+                if (swappedPitchType) displayName = swappedPitchType.name;
+            }
+            const isMax = lastPitch.speed === maxSpeed;
+
+            latestPitchDisplay.innerHTML = `
+                <p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p>
+                <svg viewbox="0 0 20 20" width="80" height="80"><use href="${originalPitchType.icon}" /></svg>
+                <p class="text-2xl font-semibold mt-2">${displayName}</p>
+                <div class="mt-4 flex items-baseline">
+                    ${isMax ? '<span class="text-4xl text-orange-500 font-bold mr-3">MAX</span>' : ''}
+                    <span class="text-7xl font-mono font-bold ${isMax ? 'text-orange-500' : 'text-gray-800'}">${lastPitch.speed}</span>
+                    <span class="text-3xl font-semibold text-gray-600 ml-2">km/h</span>
+                </div>
+            `;
+        }
+
         // --- 入力処理 ---
         function updateSpeedDisplay() {
             const h = currentSpeed[100] ?? '-';
@@ -338,29 +463,31 @@
                 return;
             }
             const speed = parseInt(`${currentSpeed[100]}${currentSpeed[10]}${currentSpeed[1]}`);
-            const newPitch = { speed: speed, type: currentPitchType, hand: currentHand };
-            pitches.push(newPitch);
+            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+            const newPitch = { type: 'pitch', speed: speed, pitchType: currentPitchType, hand: currentHand, inning: lastInningEvent.inning, topOrBottom: lastInningEvent.topOrBottom };
+            gameData.log.push(newPitch);
             renderHistory();
             await updateFirestore();
         }
 
         async function handleErrorSend() {
-            const newPitch = { speed: 'Error', type: 'error', hand: currentHand };
-            pitches.push(newPitch);
+            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+            const newPitch = { type: 'pitch', speed: 'Error', pitchType: 'error', hand: currentHand, inning: lastInningEvent.inning, topOrBottom: lastInningEvent.topOrBottom };
+            gameData.log.push(newPitch);
             renderHistory();
             await updateFirestore();
         }
         
         async function handleUndo() {
-            if (pitches.length === 0) return;
-            pitches.pop();
+            if (gameData.log.length <= 1) return;
+            gameData.log.pop();
             renderHistory();
             await updateFirestore();
         }
         
         async function handleReset() {
             if (confirm('すべてのデータをリセットしますか？')) {
-                pitches = [];
+                gameData.log = JSON.parse(getDefaultGameData().log);
                 currentHand = 'right';
                 document.querySelector('#hand-selector [data-hand="right"]').classList.add('selected');
                 document.querySelector('#hand-selector [data-hand="left"]').classList.remove('selected');
@@ -369,12 +496,43 @@
             }
         }
 
+        async function handleChangePitcher() {
+            const lastEvent = gameData.log[gameData.log.length - 1];
+            if (lastEvent && (lastEvent.type === 'pitch' || lastEvent.type === 'inning_change')) {
+                const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+                gameData.log.push({ type: 'pitcher_change', inning: lastInningEvent.inning, topOrBottom: lastInningEvent.topOrBottom });
+                renderHistory();
+                await updateFirestore();
+            } else {
+                alert('まだ投球が記録されていないか、投手交代直後です。');
+            }
+        }
+
+        async function handleChangeInning() {
+            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+            let { inning, topOrBottom } = lastInningEvent;
+
+            if (topOrBottom === 'top') {
+                topOrBottom = 'bottom';
+            } else {
+                if (inning >= 15) {
+                    alert('15回裏が終了しました。');
+                    return;
+                }
+                inning++;
+                topOrBottom = 'top';
+            }
+            gameData.log.push({ type: 'inning_change', inning, topOrBottom });
+            renderHistory();
+            await updateFirestore();
+        }
+
         // --- Firebase連携 ---
         async function updateFirestore() {
             if (!currentSessionId || !db) return;
             try {
                 const sessionDocRef = doc(db, dbCollectionPath, currentSessionId);
-                await setDoc(sessionDocRef, { pitches: pitches });
+                await setDoc(sessionDocRef, { log: JSON.stringify(gameData.log) });
             } catch (error) {
                 console.error("Firestore update failed:", error);
             }
@@ -383,23 +541,29 @@
         function startListening(sessionId) {
             const sessionDocRef = doc(db, dbCollectionPath, sessionId);
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
-                pitches = doc.exists() ? (doc.data().pitches || []) : [];
+                if (doc.exists() && doc.data().log) {
+                    gameData.log = JSON.parse(doc.data().log);
+                } else {
+                    gameData.log = JSON.parse(getDefaultGameData().log);
+                }
                 renderHistory();
             });
         }
 
         // --- モード初期化 ---
-        function setupSenderMode() {
+        async function setupSenderMode() {
             currentSessionId = Math.floor(10000 + Math.random() * 90000).toString();
-            sessionIdDisplay.forEach(el => el.textContent = currentSessionId);
+            senderSessionId.textContent = currentSessionId;
             mainContent.classList.remove('hidden');
             senderPanel.classList.remove('hidden');
             historyPanel.classList.remove('hidden');
+            receiverSessionIdContainer.classList.add('hidden');
+            senderPitchCountContainer.classList.remove('hidden');
             
             updateSpeedDisplay();
             renderPitchTypes();
-            renderHistory();
             startListening(currentSessionId);
+            await updateFirestore();
             
             senderPanel.addEventListener('click', (e) => {
                 if (e.target.closest('.input-btn[data-digit]')) handleSpeedInput(e);
@@ -410,6 +574,8 @@
             errorBtn.addEventListener('click', handleErrorSend);
             undoBtn.addEventListener('click', handleUndo);
             resetBtn.addEventListener('click', handleReset);
+            changePitcherBtn.addEventListener('click', handleChangePitcher);
+            changeInningBtn.addEventListener('click', handleChangeInning);
         }
 
         function setupReceiverMode() {
@@ -420,9 +586,11 @@
                     currentSessionId = inputId;
                     receiverConnectScreen.classList.add('hidden');
                     mainContent.classList.remove('hidden');
+                    latestPitchPanel.classList.remove('hidden');
                     historyPanel.classList.remove('hidden');
-                    historyPanel.classList.replace('lg:col-span-1', 'lg:col-span-2');
-                    sessionIdDisplay.forEach(el => el.textContent = currentSessionId);
+                    receiverSessionId.textContent = currentSessionId;
+                    senderPitchCountContainer.classList.add('hidden');
+                    receiverSessionIdContainer.classList.remove('hidden');
                     startListening(currentSessionId);
                 } else {
                     alert('有効な5桁のセッションIDを入力してください。');
