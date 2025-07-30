@@ -13,7 +13,7 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-2 md:p-4">
 
-    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-3 md:p-4">
+    <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-3 md:p-4">
 
         <!-- 0. 初期化エラー表示 -->
         <div id="init-error-container" class="hidden text-center p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
@@ -31,6 +31,20 @@
             </div>
         </div>
         
+        <!-- 【修正点】入力側のセッション選択画面を追加 -->
+        <div id="sender-choice-screen" class="hidden">
+            <h1 class="text-xl md:text-2xl font-bold text-center text-gray-800 mb-4">入力セッションの選択</h1>
+            <div class="space-y-4">
+                <button id="new-session-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg">新しいセッションを開始</button>
+                <div class="border-t my-4"></div>
+                <div>
+                    <p class="text-center text-gray-500 mb-2">または、既存のセッションIDを入力して再開</p>
+                    <input type="number" id="reconnect-session-id-input" class="w-full text-center text-2xl p-3 border-2 border-gray-300 rounded-lg tracking-widest" placeholder="12345">
+                    <button id="reconnect-btn" class="mt-2 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg">再接続</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 2. メインコンテンツ -->
         <div id="main-content" class="hidden">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
@@ -39,7 +53,7 @@
                 <div id="sender-panel" class="lg:col-span-1 hidden">
                     <div class="space-y-3">
                         <div class="p-2 bg-blue-100 border-l-4 border-blue-500 rounded-r-lg">
-                            <p class="text-blue-800 text-sm">受信側の端末で、以下のセッションIDを入力してください。</p>
+                            <p class="text-blue-800 text-sm">現在のセッションID (受信側で入力)</p>
                             <p id="sender-session-id" class="text-2xl font-bold text-center text-blue-900 tracking-widest mt-1"></p>
                         </div>
                         <!-- 投手選択UI -->
@@ -177,6 +191,10 @@
         const senderModeBtn = document.getElementById('sender-mode-btn');
         const receiverModeBtn = document.getElementById('receiver-mode-btn');
         const mainContent = document.getElementById('main-content');
+        const senderChoiceScreen = document.getElementById('sender-choice-screen');
+        const newSessionBtn = document.getElementById('new-session-btn');
+        const reconnectBtn = document.getElementById('reconnect-btn');
+        const reconnectSessionIdInput = document.getElementById('reconnect-session-id-input');
         const receiverConnectScreen = document.getElementById('receiver-connect-screen');
         const sessionIdInput = document.getElementById('session-id-input');
         const connectBtn = document.getElementById('connect-btn');
@@ -454,8 +472,9 @@
         }
 
         // --- モード初期化 ---
-        async function setupSenderMode() {
-            currentSessionId = Math.floor(10000 + Math.random() * 90000).toString();
+        async function setupSenderMode(reconnectId = null) {
+            currentSessionId = reconnectId || Math.floor(10000 + Math.random() * 90000).toString();
+            senderChoiceScreen.classList.add('hidden');
             document.getElementById('sender-session-id').textContent = currentSessionId;
             mainContent.classList.remove('hidden');
             document.getElementById('sender-panel').classList.remove('hidden');
@@ -465,7 +484,9 @@
             updateSpeedDisplay();
             renderPitchTypes();
             startListening(currentSessionId);
-            await updateFirestore();
+            if (!reconnectId) {
+                await updateFirestore();
+            }
             document.getElementById('sender-panel').addEventListener('click', (e) => {
                 if (e.target.closest('.input-btn[data-digit]')) handleSpeedInput(e);
                 if (e.target.closest('#pitch-type-selector .input-btn')) handlePitchTypeInput(e);
@@ -499,8 +520,24 @@
         }
 
         // --- アプリケーションの開始 ---
-        senderModeBtn.addEventListener('click', setupSenderMode);
-        receiverModeBtn.addEventListener('click', setupReceiverMode);
+        senderModeBtn.addEventListener('click', () => {
+            modeSelection.classList.add('hidden');
+            senderChoiceScreen.classList.remove('hidden');
+        });
+        receiverModeBtn.addEventListener('click', () => {
+            modeSelection.classList.add('hidden');
+            setupReceiverMode();
+        });
+        newSessionBtn.addEventListener('click', () => setupSenderMode());
+        reconnectBtn.addEventListener('click', () => {
+            const inputId = reconnectSessionIdInput.value.trim();
+            if (inputId.length === 5 && /^\d+$/.test(inputId)) {
+                setupSenderMode(inputId);
+            } else {
+                alert('有効な5桁のセッションIDを入力してください。');
+            }
+        });
+
         initializeFirebase();
     </script>
 </body>
