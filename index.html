@@ -13,7 +13,7 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-2 md:p-4">
 
-    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-3 md:p-4">
+    <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-3 md:p-4">
 
         <!-- 0. 初期化エラー表示 -->
         <div id="init-error-container" class="hidden text-center p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
@@ -86,42 +86,32 @@
                                 <button data-digit="1" data-value="9" class="input-btn p-1.5 border rounded-md bg-gray-200">9</button>
                             </div>
                         </div>
-                        <!-- 球種入力 -->
-                        <div>
-                            <label class="font-bold text-gray-700 text-sm">球種</label>
-                            <div id="pitch-type-selector" class="grid grid-cols-6 gap-2 mt-1">
-                                <!-- Icons will be inserted here by JS -->
+                        <!-- 球種と操作ボタンのレイアウト -->
+                        <div class="grid grid-cols-2 gap-4 pt-2">
+                            <!-- Left Column -->
+                            <div class="space-y-2">
+                                <div>
+                                    <label class="font-bold text-gray-700 text-sm">球種</label>
+                                    <div id="pitch-type-selector" class="grid grid-cols-3 gap-2 mt-1">
+                                        <!-- Icons will be inserted here by JS -->
+                                    </div>
+                                </div>
+                                <!-- 【修正点】送信ボタンをこちらに移動 -->
+                                <button id="send-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg text-lg">送信</button>
+                                <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg">リセット</button>
                             </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2 pt-2">
-                            <button id="send-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg text-lg">送信</button>
-                            <button id="error-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg text-lg">Error</button>
-                        </div>
-                        <!-- 操作ボタン -->
-                        <div>
-                             <div class="grid grid-cols-2 gap-2 mt-2">
-                                <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 rounded-lg">1球戻る</button>
-                                <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg">リセット</button>
-                             </div>
-                             <div class="grid grid-cols-2 gap-2 mt-2">
-                                <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 rounded-lg">投手交代</button>
-                                <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 rounded-lg">チェンジ</button>
-                             </div>
+                            <!-- Right Column -->
+                            <div class="space-y-2 flex flex-col">
+                                <button id="error-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg">Error</button>
+                                <!-- 【修正点】1球戻るボタンをこちらに移動 -->
+                                <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg">1球戻る</button>
+                                <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-lg">チェンジ</button>
+                                <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg">投手交代</button>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- 【修正点】最新の投球表示パネル (受信側のみ) -->
-                <div id="latest-pitch-panel" class="lg:col-span-1 hidden">
-                    <div class="mb-2 p-2 bg-gray-100 border-l-4 border-green-500 rounded-r-lg flex justify-between items-center">
-                         <p class="font-bold text-lg text-gray-800">最新の投球</p>
-                         <p id="latest-inning-display" class="font-bold text-lg text-gray-800"></p>
-                    </div>
-                    <div id="latest-pitch-display" class="h-96 lg:h-[520px] border rounded-lg p-4 flex flex-col items-center justify-center text-center bg-white">
-                        <p class="text-gray-500">データ待機中...</p>
-                    </div>
-                </div>
-
                 <!-- 履歴パネル -->
                 <div id="history-panel" class="lg:col-span-1">
                     <div class="mb-2 p-2 bg-gray-100 border-l-4 border-gray-500 rounded-r-lg flex justify-between items-center">
@@ -177,9 +167,6 @@
         const senderPanel = document.getElementById('sender-panel');
         const historyPanel = document.getElementById('history-panel');
         const receiverConnectScreen = document.getElementById('receiver-connect-screen');
-        const latestPitchPanel = document.getElementById('latest-pitch-panel');
-        const latestPitchDisplay = document.getElementById('latest-pitch-display');
-        const latestInningDisplay = document.getElementById('latest-inning-display');
 
         const speedDisplay = document.getElementById('speed-display');
         const pitchTypeSelector = document.getElementById('pitch-type-selector');
@@ -216,12 +203,12 @@
         let currentSpeed = { 100: '1', 10: null, 1: null };
         let currentPitchType = 'circle';
         const PITCH_TYPES = [
+            { id: 'tri-left', name: 'シュート系', icon: '#icon-tri-left' },
             { id: 'circle', name: 'ストレート系', icon: '#icon-circle' }, 
             { id: 'tri-right', name: 'スライダー系', icon: '#icon-tri-right' },
-            { id: 'tri-br', name: 'カーブ系', icon: '#icon-tri-br' }, 
-            { id: 'tri-down', name: 'フォーク系', icon: '#icon-tri-down' },
             { id: 'tri-bl', name: 'シンカー系', icon: '#icon-tri-bl' }, 
-            { id: 'tri-left', name: 'シュート系', icon: '#icon-tri-left' }
+            { id: 'tri-down', name: 'フォーク系', icon: '#icon-tri-down' },
+            { id: 'tri-br', name: 'カーブ系', icon: '#icon-tri-br' }
         ];
         let dbCollectionPath = '';
 
@@ -286,7 +273,7 @@
             pitchTypeSelector.innerHTML = '';
             PITCH_TYPES.forEach(type => {
                 const btn = document.createElement('button');
-                btn.className = `input-btn p-1.5 border rounded-md flex justify-center items-center ${type.id === currentPitchType ? 'selected' : 'bg-gray-200'}`;
+                btn.className = `input-btn p-2 border rounded-md flex justify-center items-center ${type.id === currentPitchType ? 'selected' : 'bg-gray-200'}`;
                 btn.dataset.type = type.id;
                 btn.innerHTML = `<svg viewbox="0 0 20 20" width="20" height="20"><use href="${type.icon}" /></svg>`;
                 pitchTypeSelector.appendChild(btn);
@@ -376,52 +363,8 @@
                 const currentTeamPitches = allPitches.filter(p => p.inning === lastInningEvent.inning && p.topOrBottom === lastInningEvent.topOrBottom);
                 senderPitchCount.textContent = currentTeamPitches.length;
             }
-
-            renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap);
         }
         
-        function renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap) {
-            if (!latestPitchDisplay) return;
-
-            const lastPitch = [...logWithPitchNumbers].reverse().find(e => e.type === 'pitch');
-            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
-            
-            if(lastInningEvent) {
-                latestInningDisplay.textContent = `${lastInningEvent.inning}回 ${lastInningEvent.topOrBottom === 'top' ? '表' : '裏'}`;
-            }
-
-            if (!lastPitch) {
-                latestPitchDisplay.innerHTML = `<p class="text-gray-500">データ待機中...</p>`;
-                return;
-            }
-
-            if (lastPitch.speed === 'Error') {
-                latestPitchDisplay.innerHTML = `
-                    <p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p>
-                    <p class="text-6xl font-bold text-red-500">Error</p>`;
-                return;
-            }
-
-            const originalPitchType = PITCH_TYPES.find(p => p.id === lastPitch.pitchType) || { icon: '#icon-circle', name: '' };
-            let displayName = originalPitchType.name;
-            if (lastPitch.hand === 'left' && leftHandSwap[lastPitch.pitchType]) {
-                const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[lastPitch.pitchType]);
-                if (swappedPitchType) displayName = swappedPitchType.name;
-            }
-            const isMax = lastPitch.speed === maxSpeed;
-
-            latestPitchDisplay.innerHTML = `
-                <p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p>
-                <svg viewbox="0 0 20 20" width="80" height="80"><use href="${originalPitchType.icon}" /></svg>
-                <p class="text-2xl font-semibold mt-2">${displayName}</p>
-                <div class="mt-4 flex items-baseline">
-                    ${isMax ? '<span class="text-4xl text-orange-500 font-bold mr-3">MAX</span>' : ''}
-                    <span class="text-7xl font-mono font-bold ${isMax ? 'text-orange-500' : 'text-gray-800'}">${lastPitch.speed}</span>
-                    <span class="text-3xl font-semibold text-gray-600 ml-2">km/h</span>
-                </div>
-            `;
-        }
-
         // --- 入力処理 ---
         function updateSpeedDisplay() {
             const h = currentSpeed[100] ?? '-';
