@@ -165,6 +165,7 @@
         let pitches = [];
         let currentSpeed = { 100: '1', 10: null, 1: null };
         let currentPitchType = 'circle';
+        let dbCollectionPath = ''; // 【修正点】データベースのパスを格納する変数
         const PITCH_TYPES = [
             { id: 'circle', icon: '#icon-circle' }, { id: 'tri-right', icon: '#icon-tri-right' },
             { id: 'tri-br', icon: '#icon-tri-br' }, { id: 'tri-down', icon: '#icon-tri-down' },
@@ -176,6 +177,7 @@
             let firebaseConfig;
             let isCanvasEnv = false;
 
+            // Canvas環境で自動提供される情報があるかチェック
             if (typeof __firebase_config !== 'undefined' && __firebase_config !== '{}') {
                 try {
                     firebaseConfig = JSON.parse(__firebase_config);
@@ -183,6 +185,7 @@
                 } catch (e) { /* Failsafe */ }
             }
 
+            // Canvas環境でない場合、ユーザーが設定した固定の接続情報を使用
             if (!isCanvasEnv) {
                 // ▼▼▼▼▼ 【最重要】この部分をご自身のFirebase接続情報に置き換えてください ▼▼▼▼▼
                 firebaseConfig = {
@@ -197,7 +200,7 @@
             }
 
             try {
-                if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
+                if (!firebaseConfig || !firebaseConfig.apiKey || (!isCanvasEnv && firebaseConfig.apiKey.startsWith("YOUR_"))) {
                     throw new Error("Firebaseの接続情報が正しく設定されていません。");
                 }
 
@@ -205,11 +208,15 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
+                // 環境に応じて認証方法とDBパスを切り替える
                 if (isCanvasEnv) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    dbCollectionPath = `artifacts/${appId}/public/data/pitch-sessions`;
                     const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                     if (authToken) await signInWithCustomToken(auth, authToken);
                     else await signInAnonymously(auth);
                 } else {
+                    dbCollectionPath = "pitch-sessions";
                     await signInAnonymously(auth);
                 }
                 
@@ -329,8 +336,7 @@
         async function updateFirestore() {
             if (!currentSessionId || !db) return;
             try {
-                const appId = 'pitch-tracker-app'; // 外部サイト用に固定のIDを使用
-                const sessionDocRef = doc(db, `artifacts/${appId}/public/data/pitch-sessions`, currentSessionId);
+                const sessionDocRef = doc(db, dbCollectionPath, currentSessionId);
                 await setDoc(sessionDocRef, { pitches });
             } catch (error) {
                 console.error("Firestore update failed:", error);
@@ -338,8 +344,7 @@
         }
 
         function startListening(sessionId) {
-            const appId = 'pitch-tracker-app'; // 外部サイト用に固定のIDを使用
-            const sessionDocRef = doc(db, `artifacts/${appId}/public/data/pitch-sessions`, sessionId);
+            const sessionDocRef = doc(db, dbCollectionPath, sessionId);
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
                 if (doc.exists()) {
                     pitches = doc.data().pitches || [];
@@ -399,3 +404,4 @@
     </script>
 </body>
 </html>
+
