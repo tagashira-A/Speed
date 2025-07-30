@@ -38,6 +38,14 @@
                 <!-- 入力パネル (送信側のみ表示) -->
                 <div id="sender-panel" class="lg:col-span-1 hidden">
                     <div class="space-y-3">
+                        <!-- 投手選択UI -->
+                        <div>
+                            <label class="font-bold text-gray-700 text-sm">投手</label>
+                            <div id="hand-selector" class="grid grid-cols-2 gap-2 mt-1">
+                                <button data-hand="right" class="input-btn p-2 border rounded-md selected">右投手</button>
+                                <button data-hand="left" class="input-btn p-2 border rounded-md bg-gray-200">左投手</button>
+                            </div>
+                        </div>
                         <!-- 球速入力 -->
                         <div>
                             <label class="font-bold text-gray-700 text-sm">球速</label>
@@ -49,7 +57,6 @@
                                 <button data-digit="100" data-value="1" class="input-btn col-span-5 p-1.5 border rounded-md bg-gray-200 selected">1</button>
                                 <button data-digit="100" data-value="0" class="input-btn col-span-5 p-1.5 border rounded-md bg-gray-200">0</button>
                             </div>
-                             <!-- 【修正点】10の位のボタンを9まで追加し、grid-cols-10に変更 -->
                              <div class="grid grid-cols-10 gap-1 mt-2">
                                 <button data-digit="10" data-value="0" class="input-btn p-1.5 border rounded-md bg-gray-200">0</button>
                                 <button data-digit="10" data-value="1" class="input-btn p-1.5 border rounded-md bg-gray-200">1</button>
@@ -101,7 +108,7 @@
                     <div class="mb-2 p-2 bg-gray-100 border-l-4 border-gray-500 rounded-r-lg">
                         <p class="text-gray-800 text-sm">セッションID: <span id="session-id-display" class="font-bold text-base tracking-widest"></span></p>
                     </div>
-                    <div class="h-96 lg:h-[480px] overflow-y-auto border rounded-lg p-2 space-y-2 bg-gray-50">
+                    <div class="h-96 lg:h-[520px] overflow-y-auto border rounded-lg p-2 space-y-2 bg-gray-50">
                         <div id="history-list">
                             <!-- History items will be inserted here -->
                         </div>
@@ -155,6 +162,7 @@
         const errorBtn = document.getElementById('error-btn');
         const undoBtn = document.getElementById('undo-btn');
         const resetBtn = document.getElementById('reset-btn');
+        const handSelector = document.getElementById('hand-selector');
         
         const sessionIdInput = document.getElementById('session-id-input');
         const connectBtn = document.getElementById('connect-btn');
@@ -166,15 +174,16 @@
         let currentSessionId = null;
         let unsubscribe = null;
         let pitches = [];
+        let currentHand = 'right';
         let currentSpeed = { 100: '1', 10: null, 1: null };
         let currentPitchType = 'circle';
         const PITCH_TYPES = [
-            { id: 'circle', icon: '#icon-circle', name: 'ストレート系' }, 
-            { id: 'tri-right', icon: '#icon-tri-right', name: 'スライダー系' },
-            { id: 'tri-br', icon: '#icon-tri-br', name: 'カーブ系' }, 
-            { id: 'tri-down', icon: '#icon-tri-down', name: 'フォーク系' },
-            { id: 'tri-bl', icon: '#icon-tri-bl', name: 'シンカー系' }, 
-            { id: 'tri-left', icon: '#icon-tri-left', name: 'シュート系' }
+            { id: 'circle', name: 'ストレート系', icon: '#icon-circle' }, 
+            { id: 'tri-right', name: 'スライダー系', icon: '#icon-tri-right' },
+            { id: 'tri-br', name: 'カーブ系', icon: '#icon-tri-br' }, 
+            { id: 'tri-down', name: 'フォーク系', icon: '#icon-tri-down' },
+            { id: 'tri-bl', name: 'シンカー系', icon: '#icon-tri-bl' }, 
+            { id: 'tri-left', name: 'シュート系', icon: '#icon-tri-left' }
         ];
         let dbCollectionPath = '';
 
@@ -248,6 +257,11 @@
 
         function renderHistory() {
             const maxSpeed = Math.max(0, ...pitches.filter(p => p.speed !== 'Error').map(p => p.speed));
+            const leftHandSwap = {
+                'tri-right': 'tri-left', 'tri-left':  'tri-right',
+                'tri-br': 'tri-bl', 'tri-bl': 'tri-br'
+            };
+
             historyList.innerHTML = pitches.slice().reverse().map((pitch, index) => {
                 const pitchNumber = pitches.length - index;
                 const isMax = pitch.speed !== 'Error' && pitch.speed === maxSpeed;
@@ -260,12 +274,21 @@
                     </div>`;
                 }
                 
-                const pitchType = PITCH_TYPES.find(p => p.id === pitch.type) || { icon: '#icon-circle', name: '' };
+                const originalPitchType = PITCH_TYPES.find(p => p.id === pitch.type) || { icon: '#icon-circle', name: '' };
+                let displayName = originalPitchType.name;
+                
+                // 【修正点】文字だけを入れ替えるロジック
+                if (pitch.hand === 'left' && leftHandSwap[pitch.type]) {
+                    const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[pitch.type]);
+                    if (swappedPitchType) {
+                        displayName = swappedPitchType.name;
+                    }
+                }
                 
                 return `<div class="flex items-center p-2 rounded-md ${bgColor}">
                     <span class="font-bold w-8">${pitchNumber}.</span>
-                    <svg viewbox="0 0 20 20" width="20" height="20"><use href="${pitchType.icon}" /></svg>
-                    <span class="text-sm text-gray-700 w-24 text-center">${pitchType.name}</span>
+                    <svg viewbox="0 0 20 20" width="20" height="20"><use href="${originalPitchType.icon}" /></svg>
+                    <span class="text-sm text-gray-700 w-24 text-center">${displayName}</span>
                     <div class="ml-auto flex items-baseline">
                         ${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}
                         <span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span>
@@ -287,7 +310,6 @@
             if (!btn) return;
             const { digit, value } = btn.dataset;
             currentSpeed[digit] = value;
-            
             document.querySelectorAll(`.input-btn[data-digit="${digit}"]`).forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             updateSpeedDisplay();
@@ -300,20 +322,30 @@
             renderPitchTypes();
         }
 
+        function handleHandSelection(e) {
+            const btn = e.target.closest('.input-btn');
+            if (!btn) return;
+            currentHand = btn.dataset.hand;
+            document.querySelectorAll('#hand-selector .input-btn').forEach(b => {
+                b.classList.remove('selected'); b.classList.add('bg-gray-200');
+            });
+            btn.classList.add('selected'); btn.classList.remove('bg-gray-200');
+        }
+
         async function handleSend() {
             if (Object.values(currentSpeed).some(v => v === null)) {
                 alert('球速をすべて選択してください。');
                 return;
             }
             const speed = parseInt(`${currentSpeed[100]}${currentSpeed[10]}${currentSpeed[1]}`);
-            const newPitch = { speed: speed, type: currentPitchType };
+            const newPitch = { speed: speed, type: currentPitchType, hand: currentHand };
             pitches.push(newPitch);
             renderHistory();
             await updateFirestore();
         }
 
         async function handleErrorSend() {
-            const newPitch = { speed: 'Error', type: 'error' };
+            const newPitch = { speed: 'Error', type: 'error', hand: currentHand };
             pitches.push(newPitch);
             renderHistory();
             await updateFirestore();
@@ -329,6 +361,9 @@
         async function handleReset() {
             if (confirm('すべてのデータをリセットしますか？')) {
                 pitches = [];
+                currentHand = 'right';
+                document.querySelector('#hand-selector [data-hand="right"]').classList.add('selected');
+                document.querySelector('#hand-selector [data-hand="left"]').classList.remove('selected');
                 renderHistory();
                 await updateFirestore();
             }
@@ -339,7 +374,7 @@
             if (!currentSessionId || !db) return;
             try {
                 const sessionDocRef = doc(db, dbCollectionPath, currentSessionId);
-                await setDoc(sessionDocRef, { pitches });
+                await setDoc(sessionDocRef, { pitches: pitches });
             } catch (error) {
                 console.error("Firestore update failed:", error);
             }
@@ -348,11 +383,7 @@
         function startListening(sessionId) {
             const sessionDocRef = doc(db, dbCollectionPath, sessionId);
             unsubscribe = onSnapshot(sessionDocRef, (doc) => {
-                if (doc.exists()) {
-                    pitches = doc.data().pitches || [];
-                } else {
-                    pitches = [];
-                }
+                pitches = doc.exists() ? (doc.data().pitches || []) : [];
                 renderHistory();
             });
         }
@@ -374,6 +405,7 @@
                 if (e.target.closest('.input-btn[data-digit]')) handleSpeedInput(e);
                 if (e.target.closest('#pitch-type-selector .input-btn')) handlePitchTypeInput(e);
             });
+            handSelector.addEventListener('click', handleHandSelection);
             sendBtn.addEventListener('click', handleSend);
             errorBtn.addEventListener('click', handleErrorSend);
             undoBtn.addEventListener('click', handleUndo);
