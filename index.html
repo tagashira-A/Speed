@@ -9,20 +9,26 @@
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .input-btn { transition: all 0.1s ease-in-out; }
         .input-btn.selected { background-color: #3b82f6; color: white; transform: scale(1.1); box-shadow: 0 4px 14px 0 rgba(0, 118, 255, 0.39); }
+        .loader { border-top-color: #3498db; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-2 md:p-4">
 
-    <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-3 md:p-4">
+    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-3 md:p-4">
 
-        <!-- 0. 初期化エラー表示 -->
+        <!-- 0. 初期化・エラー表示 -->
+        <div id="loading-container" class="text-center p-4">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto mb-4"></div>
+            <p class="text-gray-700 font-semibold">データベースに接続中...</p>
+        </div>
         <div id="init-error-container" class="hidden text-center p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
             <h3 class="font-bold text-lg">接続エラー</h3>
             <p id="init-error-message" class="mt-2"></p>
         </div>
 
         <!-- 1. モード選択画面 -->
-        <div id="mode-selection">
+        <div id="mode-selection" class="hidden">
             <h1 class="text-xl md:text-2xl font-bold text-center text-gray-800 mb-4">モードを選択</h1>
             <p class="text-center text-gray-500 mb-6">どのように利用しますか？</p>
             <div class="flex flex-col md:flex-row gap-4">
@@ -31,7 +37,6 @@
             </div>
         </div>
         
-        <!-- 【修正点】入力側のセッション選択画面を追加 -->
         <div id="sender-choice-screen" class="hidden">
             <h1 class="text-xl md:text-2xl font-bold text-center text-gray-800 mb-4">入力セッションの選択</h1>
             <div class="space-y-4">
@@ -119,10 +124,12 @@
                                     <div class="space-y-2">
                                         <button id="undo-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg">1球戻る</button>
                                         <button id="change-pitcher-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg">投手交代</button>
+                                        <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg">リセット</button>
                                     </div>
                                     <div class="space-y-2">
+                                        <button id="change-batter-btn" class="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 rounded-lg">打者交代</button>
                                         <button id="change-inning-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-lg">チェンジ</button>
-                                        <button id="reset-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg">リセット</button>
+                                        <button id="undo-change-btn" class="w-full bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 rounded-lg">交代取消</button>
                                     </div>
                                 </div>
                             </div>
@@ -144,8 +151,10 @@
                 <div id="history-panel" class="lg:col-span-1">
                     <div class="mb-2 p-2 bg-gray-100 border-l-4 border-gray-500 rounded-r-lg flex justify-between items-center">
                         <div id="history-header-left">
-                            <p id="receiver-session-id-container" class="text-gray-800 text-sm">セッションID: <span id="receiver-session-id" class="font-bold text-base tracking-widest"></span></p>
-                            <p id="sender-pitch-count-container" class="text-gray-800 text-sm hidden">イニング投球数: <span id="sender-pitch-count" class="font-bold text-base">0</span></p>
+                            <p id="sender-pitch-count-container" class="text-gray-800 text-sm">
+                                <span class="mr-2">イニング投球数: <span id="inning-pitch-count" class="font-bold text-base">0</span></span>
+                                <span>投手総投球数: <span id="pitcher-total-count" class="font-bold text-base">0</span></span>
+                            </p>
                         </div>
                         <p id="inning-display" class="font-bold text-lg text-gray-800"></p>
                     </div>
@@ -154,6 +163,7 @@
                             <!-- History items will be inserted here -->
                         </div>
                     </div>
+                    <p id="receiver-session-id-footer" class="text-center text-xs text-gray-400 mt-2 hidden"></p>
                 </div>
             </div>
         </div>
@@ -198,10 +208,11 @@
         const receiverConnectScreen = document.getElementById('receiver-connect-screen');
         const sessionIdInput = document.getElementById('session-id-input');
         const connectBtn = document.getElementById('connect-btn');
+        const loadingContainer = document.getElementById('loading-container');
         
         // --- グローバル変数 (DOM要素以外) ---
         let db, auth, currentSessionId = null, unsubscribe = null;
-        const getDefaultGameData = () => ({ log: JSON.stringify([{ type: 'inning_change', inning: 1, topOrBottom: 'top' }]) });
+        const getDefaultGameData = () => ({ log: JSON.stringify([{ type: 'inning_change', inning: 1, topOrBottom: 'top' }, { type: 'batter_change', batterNumber: 1, inning: 1, topOrBottom: 'top' }]) });
         let gameData = { log: JSON.parse(getDefaultGameData().log) };
         let currentHand = 'right', currentSpeed = { 100: '1', 10: null, 1: null }, currentPitchType = 'circle';
         const PITCH_TYPES = [
@@ -223,12 +234,12 @@
             }
             if (!isCanvasEnv) {
                 firebaseConfig = {
-                  apiKey: "AIzaSyB04E1rEWBlUbFDcmrjIYOEvL2wVWl5eaY",
-                  authDomain: "my-ocr-app-5668e.firebaseapp.com",
-                  projectId: "my-ocr-app-5668e",
-                  storageBucket: "my-ocr-app-5668e.firebasestorage.app",
-                  messagingSenderId: "953157989165",
-                  appId: "1:953157989165:web:30af95785f2264d89099a4"
+                  apiKey: "YOUR_API_KEY",
+                  authDomain: "YOUR_AUTH_DOMAIN",
+                  projectId: "YOUR_PROJECT_ID",
+                  storageBucket: "YOUR_STORAGE_BUCKET",
+                  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                  appId: "YOUR_APP_ID"
                 };
             }
             try {
@@ -249,6 +260,8 @@
                     await signInAnonymously(auth);
                 }
                 console.log("Firebase initialized and signed in.");
+                loadingContainer.classList.add('hidden');
+                modeSelection.classList.remove('hidden');
             } catch (e) {
                 console.error("Firebase initialization failed:", e);
                 let msg = `データベースに接続できませんでした。(${e.message})`;
@@ -256,8 +269,8 @@
                     msg = "データベース接続エラー: Firebaseプロジェクトで「匿名認証」が有効になっていない可能性があります。";
                 }
                 initErrorMessage.textContent = msg;
+                loadingContainer.classList.add('hidden');
                 initErrorContainer.classList.remove('hidden');
-                modeSelection.classList.add('hidden');
             }
         }
 
@@ -280,17 +293,28 @@
                 'tri-br': 'tri-bl', 'tri-bl': 'tri-br'
             };
             document.getElementById('history-list').innerHTML = '';
-            let pitcherCounters = {}, pitcherIndex = { top: 0, bottom: 0 };
+            
+            let pitcherCounters = {};
+            let pitcherIndex = { top: 0, bottom: 0 };
+            let batterCounters = {};
+            let batterIndex = { top: 1, bottom: 1 };
             
             const logWithPitchNumbers = log.map(event => {
                 const eventWithCount = { ...event };
                 const team = event.topOrBottom;
-                if (event.type === 'inning_change') pitcherIndex[team] = 0;
-                else if (event.type === 'pitcher_change') pitcherIndex[team]++;
-                else if (event.type === 'pitch') {
-                    const key = `${team}-${pitcherIndex[team]}`;
-                    pitcherCounters[key] = (pitcherCounters[key] || 0) + 1;
-                    eventWithCount.pitcherPitchNum = pitcherCounters[key];
+                if (event.type === 'inning_change') {
+                    // Batter index is handled by batter_change events in handleChangeInning
+                } else if (event.type === 'pitcher_change') {
+                    pitcherIndex[team]++;
+                } else if (event.type === 'batter_change') {
+                    batterIndex[team] = event.batterNumber;
+                } else if (event.type === 'pitch') {
+                    const pitcherKey = `${team}-${pitcherIndex[team]}`;
+                    const batterKey = `${team}-${event.inning}-${batterIndex[team]}`;
+                    pitcherCounters[pitcherKey] = (pitcherCounters[pitcherKey] || 0) + 1;
+                    batterCounters[batterKey] = (batterCounters[batterKey] || 0) + 1;
+                    eventWithCount.pitcherPitchNum = pitcherCounters[pitcherKey];
+                    eventWithCount.batterPitchNum = batterCounters[batterKey];
                 }
                 return eventWithCount;
             });
@@ -301,11 +325,13 @@
                     htmlElements.push(`<div class="text-center text-sm font-bold text-gray-600 my-2 p-1 bg-gray-200 rounded">--- ${event.inning}回 ${event.topOrBottom === 'top' ? '表' : '裏'} ---</div>`);
                 } else if (event.type === 'pitcher_change') {
                     htmlElements.push(`<div class="text-center text-xs text-gray-500 my-1 p-1 bg-gray-100 rounded">--- 投手交代 ---</div>`);
+                } else if (event.type === 'batter_change') {
+                    htmlElements.push(`<div class="text-center text-xs text-gray-500 my-1 p-1 bg-gray-100 rounded">--- ${event.batterNumber}番打者 ---</div>`);
                 } else if (event.type === 'pitch') {
                     const pitch = event;
                     const isMax = pitch.speed !== 'Error' && pitch.speed === maxSpeed;
                     if (pitch.speed === 'Error') {
-                        htmlElements.push(`<div class="flex items-center p-2 rounded-md"><span class="font-bold w-8">${pitch.pitcherPitchNum}.</span><span class="font-mono text-base ml-auto text-red-500 font-semibold">Error</span></div>`);
+                        htmlElements.push(`<div class="flex items-center p-2 rounded-md"><span class="font-bold w-8">${pitch.batterPitchNum}.</span><span class="font-mono text-base ml-auto text-red-500 font-semibold">Error</span></div>`);
                         return;
                     }
                     const originalPitchType = PITCH_TYPES.find(p => p.id === pitch.pitchType) || { icon: '#icon-circle', name: '' };
@@ -314,7 +340,7 @@
                         const swappedPitchType = PITCH_TYPES.find(p => p.id === leftHandSwap[pitch.pitchType]);
                         if (swappedPitchType) displayName = swappedPitchType.name;
                     }
-                    htmlElements.push(`<div class="flex items-center p-2 rounded-md"><span class="font-bold w-8">${pitch.pitcherPitchNum}.</span><svg viewbox="0 0 20 20" width="20" height="20"><use href="${originalPitchType.icon}" /></svg><span class="text-sm text-gray-700 w-24 text-center">${displayName}</span><div class="ml-auto flex items-baseline">${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}<span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span></div></div>`);
+                    htmlElements.push(`<div class="flex items-center p-2 rounded-md"><span class="font-bold w-8">${pitch.batterPitchNum}.</span><svg viewbox="0 0 20 20" width="20" height="20"><use href="${originalPitchType.icon}" /></svg><span class="text-sm text-gray-700 w-24 text-center">${displayName}</span><div class="ml-auto flex items-baseline">${isMax ? '<span class="text-orange-500 font-bold mr-2">MAX</span>' : ''}<span class="font-mono text-base ${isMax ? 'text-orange-500 font-bold' : ''}">${pitch.speed} km/h</span></div></div>`);
                 }
             });
             document.getElementById('history-list').innerHTML = htmlElements.reverse().map((html, index) => {
@@ -327,13 +353,29 @@
             const lastInningEvent = [...log].reverse().find(e => e.type === 'inning_change') || log[0];
             if(lastInningEvent) {
                 document.getElementById('inning-display').textContent = `${lastInningEvent.inning}回 ${lastInningEvent.topOrBottom === 'top' ? '表' : '裏'}`;
-                const currentTeamPitches = allPitches.filter(p => p.inning === lastInningEvent.inning && p.topOrBottom === lastInningEvent.topOrBottom);
-                const senderPitchCountEl = document.getElementById('sender-pitch-count');
-                if(senderPitchCountEl) senderPitchCountEl.textContent = currentTeamPitches.length;
+                const inningPitchCountEl = document.getElementById('inning-pitch-count');
+                const pitcherTotalCountEl = document.getElementById('pitcher-total-count');
+                if(inningPitchCountEl && pitcherTotalCountEl) {
+                    const team = lastInningEvent.topOrBottom;
+                    const inningPitches = log.filter(e => e.type === 'pitch' && e.inning === lastInningEvent.inning && e.topOrBottom === team);
+                    inningPitchCountEl.textContent = inningPitches.length;
+                    
+                    const teamLog = log.filter(e => e.topOrBottom === team);
+                    const lastPitcherEventIndex = findLastIndex(teamLog, e => e.type === 'pitcher_change' || e.type === 'inning_change');
+                    const pitcherPitches = teamLog.slice(lastPitcherEventIndex > -1 ? lastPitcherEventIndex : 0).filter(p => p.type === 'pitch');
+                    pitcherTotalCountEl.textContent = pitcherPitches.length;
+                }
             }
             renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap);
         }
         
+        function findLastIndex(arr, callback) {
+            for (let i = arr.length - 1; i >= 0; i--) {
+                if (callback(arr[i])) return i;
+            }
+            return -1;
+        }
+
         function renderLatestPitch(logWithPitchNumbers, maxSpeed, leftHandSwap) {
             const latestPitchPanel = document.getElementById('latest-pitch-panel');
             if (!latestPitchPanel || latestPitchPanel.classList.contains('hidden')) return;
@@ -350,7 +392,7 @@
                 return;
             }
             if (lastPitch.speed === 'Error') {
-                latestPitchDisplay.innerHTML = `<p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p><p class="text-6xl font-bold text-red-500">Error</p>`;
+                latestPitchDisplay.innerHTML = `<p class="text-2xl font-bold mb-4">球数: ${lastPitch.batterPitchNum}</p><p class="text-6xl font-bold text-red-500">Error</p>`;
                 return;
             }
             const originalPitchType = PITCH_TYPES.find(p => p.id === lastPitch.pitchType) || { icon: '#icon-circle', name: '' };
@@ -360,7 +402,7 @@
                 if (swappedPitchType) displayName = swappedPitchType.name;
             }
             const isMax = lastPitch.speed === maxSpeed;
-            latestPitchDisplay.innerHTML = `<p class="text-2xl font-bold mb-4">球数: ${lastPitch.pitcherPitchNum}</p><svg viewbox="0 0 20 20" width="80" height="80"><use href="${originalPitchType.icon}" /></svg><p class="text-2xl font-semibold mt-2">${displayName}</p><div class="mt-4 flex items-baseline">${isMax ? '<span class="text-4xl text-orange-500 font-bold mr-3">MAX</span>' : ''}<span class="text-7xl font-mono font-bold ${isMax ? 'text-orange-500' : 'text-gray-800'}">${lastPitch.speed}</span><span class="text-3xl font-semibold text-gray-600 ml-2">km/h</span></div>`;
+            latestPitchDisplay.innerHTML = `<p class="text-2xl font-bold mb-4">球数: ${lastPitch.batterPitchNum}</p><svg viewbox="0 0 20 20" width="80" height="80"><use href="${originalPitchType.icon}" /></svg><p class="text-2xl font-semibold mt-2">${displayName}</p><div class="mt-4 flex items-baseline">${isMax ? '<span class="text-4xl text-orange-500 font-bold mr-3">MAX</span>' : ''}<span class="text-7xl font-mono font-bold ${isMax ? 'text-orange-500' : 'text-gray-800'}">${lastPitch.speed}</span><span class="text-3xl font-semibold text-gray-600 ml-2">km/h</span></div>`;
         }
 
         // --- 入力処理 ---
@@ -427,13 +469,13 @@
         }
         async function handleChangePitcher() {
             const lastEvent = gameData.log[gameData.log.length - 1];
-            if (lastEvent && (lastEvent.type === 'pitch' || lastEvent.type === 'inning_change')) {
+            if (lastEvent && (lastEvent.type === 'pitch' || lastEvent.type === 'inning_change' || lastEvent.type === 'batter_change')) {
                 const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
                 gameData.log.push({ type: 'pitcher_change', inning: lastInningEvent.inning, topOrBottom: lastInningEvent.topOrBottom });
                 renderHistory();
                 await updateFirestore();
             } else {
-                alert('まだ投球が記録されていないか、投手交代直後です。');
+                alert('まだ投球が記録されていないか、交代直後です。');
             }
         }
         async function handleChangeInning() {
@@ -444,9 +486,33 @@
                 if (inning >= 15) { alert('15回裏が終了しました。'); return; }
                 inning++; topOrBottom = 'top';
             }
+            const teamLog = gameData.log.filter(e => e.topOrBottom === topOrBottom);
+            const lastBatterEventForTeam = [...teamLog].reverse().find(e => e.type === 'batter_change');
+            let nextBatter = lastBatterEventForTeam ? (lastBatterEventForTeam.batterNumber % 9) + 1 : 1;
             gameData.log.push({ type: 'inning_change', inning, topOrBottom });
+            gameData.log.push({ type: 'batter_change', batterNumber: nextBatter, inning: inning, topOrBottom: topOrBottom });
             renderHistory();
             await updateFirestore();
+        }
+        async function handleChangeBatter() {
+            const lastInningEvent = [...gameData.log].reverse().find(e => e.type === 'inning_change') || gameData.log[0];
+            const currentTeam = lastInningEvent.topOrBottom;
+            const teamLog = gameData.log.filter(e => e.topOrBottom === currentTeam && e.inning === lastInningEvent.inning);
+            const lastBatterEvent = [...teamLog].reverse().find(e => e.type === 'batter_change');
+            let nextBatter = lastBatterEvent ? (lastBatterEvent.batterNumber % 9) + 1 : 1;
+            gameData.log.push({ type: 'batter_change', batterNumber: nextBatter, inning: lastInningEvent.inning, topOrBottom: currentTeam });
+            renderHistory();
+            await updateFirestore();
+        }
+        async function handleUndoChange() {
+            const lastEvent = gameData.log[gameData.log.length - 1];
+            if (lastEvent && (lastEvent.type === 'pitcher_change' || lastEvent.type === 'batter_change')) {
+                gameData.log.pop();
+                renderHistory();
+                await updateFirestore();
+            } else {
+                alert('直前の操作が投手または打者交代ではありません。');
+            }
         }
 
         // --- Firebase連携 ---
@@ -475,12 +541,13 @@
         async function setupSenderMode(reconnectId = null) {
             currentSessionId = reconnectId || Math.floor(10000 + Math.random() * 90000).toString();
             senderChoiceScreen.classList.add('hidden');
-            document.getElementById('sender-session-id').textContent = currentSessionId;
             mainContent.classList.remove('hidden');
             document.getElementById('sender-panel').classList.remove('hidden');
             document.getElementById('history-panel').classList.remove('hidden');
+            document.getElementById('latest-pitch-panel').classList.add('hidden');
             document.getElementById('receiver-session-id-container').classList.add('hidden');
             document.getElementById('sender-pitch-count-container').classList.remove('hidden');
+            document.getElementById('sender-session-id').textContent = currentSessionId;
             updateSpeedDisplay();
             renderPitchTypes();
             startListening(currentSessionId);
@@ -498,6 +565,8 @@
             document.getElementById('reset-btn').addEventListener('click', handleReset);
             document.getElementById('change-pitcher-btn').addEventListener('click', handleChangePitcher);
             document.getElementById('change-inning-btn').addEventListener('click', handleChangeInning);
+            document.getElementById('change-batter-btn').addEventListener('click', handleChangeBatter);
+            document.getElementById('undo-change-btn').addEventListener('click', handleUndoChange);
         }
         function setupReceiverMode() {
             receiverConnectScreen.classList.remove('hidden');
@@ -507,11 +576,14 @@
                     currentSessionId = inputId;
                     receiverConnectScreen.classList.add('hidden');
                     mainContent.classList.remove('hidden');
+                    document.getElementById('sender-panel').classList.add('hidden');
                     document.getElementById('latest-pitch-panel').classList.remove('hidden');
                     document.getElementById('history-panel').classList.remove('hidden');
-                    document.getElementById('receiver-session-id').textContent = currentSessionId;
-                    document.getElementById('sender-pitch-count-container').classList.add('hidden');
                     document.getElementById('receiver-session-id-container').classList.remove('hidden');
+                    document.getElementById('sender-pitch-count-container').classList.add('hidden');
+                    document.getElementById('receiver-session-id').textContent = currentSessionId;
+                    document.getElementById('receiver-session-id-footer').textContent = `セッションID: ${currentSessionId}`;
+                    document.getElementById('receiver-session-id-footer').classList.remove('hidden');
                     startListening(currentSessionId);
                 } else {
                     alert('有効な5桁のセッションIDを入力してください。');
